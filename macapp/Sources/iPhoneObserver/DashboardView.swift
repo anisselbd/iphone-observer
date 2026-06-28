@@ -366,10 +366,14 @@ struct Sparkline: View {
 
 // MARK: - Process tab
 
+struct PidSel: Identifiable { let id: Int }
+
 struct ProcessTab: View {
     @EnvironmentObject var client: CollectorClient
     @State private var sortOrder = [KeyPathComparator(\ProcessRow.cpu, order: .reverse)]
     @State private var query = ""
+    @State private var selectedPid: Int?
+    @State private var detail: PidSel?
 
     private var rows: [ProcessRow] {
         let base = query.isEmpty
@@ -404,7 +408,7 @@ struct ProcessTab: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(.white.opacity(0.05), in: Capsule())
                 }
-                Table(rows, sortOrder: $sortOrder) {
+                Table(rows, selection: $selectedPid, sortOrder: $sortOrder) {
                     TableColumn("PID", value: \.pid) { Text("\($0.pid)").monospacedDigit().foregroundStyle(.secondary) }
                         .width(min: 56, ideal: 64)
                     TableColumn("Process", value: \.name) { Text($0.name).fontWeight(.medium) }
@@ -416,8 +420,113 @@ struct ProcessTab: View {
                         .width(min: 64, ideal: 74)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
+                .contextMenu(forSelectionType: ProcessRow.ID.self) { ids in
+                    if let pid = ids.first {
+                        Button("Voir le detail") { detail = PidSel(id: pid) }
+                    }
+                } primaryAction: { ids in
+                    if let pid = ids.first { detail = PidSel(id: pid) }
+                }
+                Text("Double-clic sur un process pour son historique CPU/RAM.")
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
+        }
+        .sheet(item: $detail, onDismiss: { selectedPid = nil }) { sel in
+            ProcessDetailView(pid: sel.id).environmentObject(client)
+        }
+    }
+}
+
+// MARK: - Detail process (historique en memoire, session courante)
+
+struct ProcessDetailView: View {
+    @EnvironmentObject var client: CollectorClient
+    @Environment(\.dismiss) private var dismiss
+    let pid: Int
+
+    private var current: ProcessRow? { client.processes.first { $0.pid == pid } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(client.name(for: pid)).font(.title3.weight(.semibold))
+                    Text("PID \(pid)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title2) }
+                    .buttonStyle(.borderless).foregroundStyle(.secondary)
+            }
+
+            if let c = current {
+                HStack(spacing: 18) {
+                    stat("CPU", String(format: "%.1f %%", c.cpu), .accentBlue)
+                    stat("RAM", String(format: "%.1f Mo", c.rssMb), .okGreen)
+                    stat("Threads", "\(c.threads)", .warnYellow)
+                }
+            } else {
+                Text("Process plus visible dans le flux courant.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            // Rafraichissement autonome: relit l'historique en memoire sans
+            // dependre d'une publication globale du client.
+            TimelineView(.periodic(from: .now, by: 1.5)) { _ in
+                let h = client.history(for: pid)
+                VStack(alignment: .leading, spacing: 12) {
+                    historyChart("CPU %", h.map { TimelinePoint(t: $0.t, v: $0.cpu) },
+                                 .accentBlue) { String(format: "%.0f %%", $0) }
+                    historyChart("RAM (Mo)", h.map { TimelinePoint(t: $0.t, v: $0.rss) },
+                                 .okGreen) { String(format: "%.0f Mo", $0) }
+                    Text(h.count >= 2
+                         ? "\(h.count) echantillons (1 Hz) sur cette session"
+                         : "Historique en cours d'accumulation...")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 460, height: 420)
+        .background(windowBackground)
+    }
+
+    private func stat(_ title: String, _ value: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.title3.weight(.semibold)).foregroundStyle(color).monospacedDigit()
+        }
+    }
+
+    private func historyChart(_ title: String, _ pts: [TimelinePoint], _ color: Color,
+                              _ fmt: @escaping (Double) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(pts.last.map { fmt($0.v) } ?? "n/d")
+                    .font(.caption.weight(.semibold)).foregroundStyle(color).monospacedDigit()
+            }
+            if pts.count >= 2 {
+                Chart {
+                    ForEach(pts.indices, id: \.self) { i in
+                        let dt = Date(timeIntervalSince1970: pts[i].t)
+                        AreaMark(x: .value("t", dt), y: .value("v", pts[i].v))
+                            .foregroundStyle(LinearGradient(colors: [color.opacity(0.30), color.opacity(0.02)],
+                                                            startPoint: .top, endPoint: .bottom))
+                            .interpolationMethod(.catmullRom)
+                        LineMark(x: .value("t", dt), y: .value("v", pts[i].v))
+                            .foregroundStyle(color).interpolationMethod(.catmullRom)
+                    }
+                }
+                .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) }
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                .frame(height: 120)
+            } else {
+                RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.03))
+                    .frame(height: 120)
+                    .overlay(ProgressView().controlSize(.small))
+            }
         }
     }
 }

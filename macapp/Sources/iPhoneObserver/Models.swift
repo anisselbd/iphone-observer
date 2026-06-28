@@ -11,6 +11,16 @@ struct ProcessRow: Identifiable {
     var id: Int { pid }
 }
 
+// Echantillon d'historique par process, accumule en memoire a chaque tick (1 Hz)
+// a partir de la liste complete (pas seulement le top affiche). Couvre la session
+// courante de l'app.
+struct ProcSample: Identifiable {
+    let t: Double
+    let cpu: Double
+    let rss: Double
+    var id: Double { t }
+}
+
 struct Totals {
     let aggregateCpu: Double
     let processCount: Int

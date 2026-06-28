@@ -28,6 +28,15 @@ final class CollectorClient: ObservableObject {
     private var smoothedCpu: [Int: Double] = [:]
     private var lastTableEmit: Date = .distantPast
 
+    // Historique par process pour la vue de detail. Non publie: on l'alimente a
+    // chaque tick sans invalider toute l'UI; la vue de detail se rafraichit seule.
+    private var historyStore: [Int: [ProcSample]] = [:]
+    private var procNames: [Int: String] = [:]
+    private let maxHistory = 300  // ~5 min a 1 Hz
+
+    func history(for pid: Int) -> [ProcSample] { historyStore[pid] ?? [] }
+    func name(for pid: Int) -> String { procNames[pid] ?? "pid \(pid)" }
+
     // Vrai des qu'on a recu au moins un tick: l'app peut afficher le dashboard.
     var hasData: Bool { totals != nil }
 
@@ -241,6 +250,7 @@ final class CollectorClient: ObservableObject {
         }
         let raw = d["processes"] as? [[String: Any]] ?? []
         let alpha = 0.4 // poids de la valeur instantanee (plus bas = plus lisse)
+        let now = Date().timeIntervalSince1970
         var present = Set<Int>()
         let rows = raw.compactMap { p -> ProcessRow? in
             guard let pid = numI(p["pid"]) else { return nil }
@@ -249,15 +259,20 @@ final class CollectorClient: ObservableObject {
             let prev = smoothedCpu[pid] ?? instant
             let sm = alpha * instant + (1 - alpha) * prev
             smoothedCpu[pid] = sm
-            return ProcessRow(
-                pid: pid,
-                name: p["name"] as? String ?? "pid \(pid)",
-                cpu: (sm * 10).rounded() / 10,
-                rssMb: numD(p["rss_mb"]) ?? 0,
-                threads: numI(p["threads"]) ?? 0
-            )
+            let name = p["name"] as? String ?? "pid \(pid)"
+            let rss = numD(p["rss_mb"]) ?? 0
+            let cpu = (sm * 10).rounded() / 10
+            // Historique 1 Hz pour la vue de detail (toute la liste, pas le top).
+            procNames[pid] = name
+            var h = historyStore[pid] ?? []
+            h.append(ProcSample(t: now, cpu: cpu, rss: rss))
+            if h.count > maxHistory { h.removeFirst(h.count - maxHistory) }
+            historyStore[pid] = h
+            return ProcessRow(pid: pid, name: name, cpu: cpu, rssMb: rss, threads: numI(p["threads"]) ?? 0)
         }
         smoothedCpu = smoothedCpu.filter { present.contains($0.key) }
+        historyStore = historyStore.filter { present.contains($0.key) }
+        procNames = procNames.filter { present.contains($0.key) }
         lastError = nil // la donnee coule: plus d'erreur a montrer
 
         // Cadence reduite + pause: la table ne se reordonne pas chaque seconde.
