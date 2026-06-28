@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+.uv/
+
+# Donnees collectees (local-first, jamais commitees)
+*.sqlite
+*.sqlite3
+*.duckdb
+*.pcap
+data/
+captures/
+
+# OS
+.DS_Store
