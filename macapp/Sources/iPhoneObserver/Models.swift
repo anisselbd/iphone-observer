@@ -76,6 +76,16 @@ struct LogLine: Identifiable {
     let message: String
 }
 
+struct Memory {
+    let totalMb: Int
+    let usedMb: Int
+    let freeMb: Int
+    let compressedMb: Int
+    var totalGo: Double { Double(totalMb) / 1000 }
+    var usedGo: Double { Double(usedMb) / 1000 }
+    var fraction: Double { totalMb > 0 ? Double(usedMb) / Double(totalMb) : 0 }
+}
+
 struct TimelinePoint {
     let t: Double
     let v: Double

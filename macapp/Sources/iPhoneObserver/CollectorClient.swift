@@ -19,6 +19,7 @@ final class CollectorClient: ObservableObject {
     @Published var lastError: String?
     @Published var timeline: TimelineData?
     @Published var cpuCores: Int = 6
+    @Published var memory: Memory?
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -211,6 +212,14 @@ final class CollectorClient: ObservableObject {
                 rssMbTotal: numD(t["rss_mb_total"]) ?? 0,
                 topName: t["top_name"] as? String ?? "-",
                 topCpu: numD(t["top_cpu"]) ?? 0
+            )
+        }
+        if let m = d["memory"] as? [String: Any], let total = numI(m["total_mb"]), total > 0 {
+            memory = Memory(
+                totalMb: total,
+                usedMb: numI(m["used_mb"]) ?? 0,
+                freeMb: numI(m["free_mb"]) ?? 0,
+                compressedMb: numI(m["compressed_mb"]) ?? 0
             )
         }
         let raw = d["processes"] as? [[String: Any]] ?? []

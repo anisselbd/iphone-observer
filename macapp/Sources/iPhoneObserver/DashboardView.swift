@@ -241,21 +241,38 @@ struct RamCard: View {
     @EnvironmentObject var client: CollectorClient
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("RAM (process)", systemImage: "memorychip").font(.caption).foregroundStyle(.secondary)
-                let mb = client.totals?.rssMbTotal ?? 0
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(mb >= 1024 ? String(format: "%.1f", mb / 1024) : String(format: "%.0f", mb))
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    Text(mb >= 1024 ? "Go" : "Mo").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Memoire", systemImage: "memorychip").font(.caption).foregroundStyle(.secondary)
+                if let m = client.memory {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(String(format: "%.1f", m.usedGo))
+                            .font(.system(size: 28, weight: .semibold, design: .rounded))
+                        Text("/ \(String(format: "%.0f", m.totalGo)) Go").foregroundStyle(.secondary)
+                    }
+                    bar(m.fraction)
+                    Text("\(Int(m.fraction * 100)) % utilisee · \(client.totals?.processCount ?? 0) process")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                } else {
+                    Text("...").foregroundStyle(.tertiary)
                 }
-                Text("\(client.totals?.processCount ?? 0) process actifs")
-                    .font(.caption2).foregroundStyle(.tertiary)
                 Spacer(minLength: 0)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func bar(_ f: Double) -> some View {
+        let color: Color = f >= 0.9 ? .errRed : (f >= 0.7 ? .warnYellow : .okGreen)
+        return GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.08))
+                Capsule().fill(color)
+                    .frame(width: geo.size.width * CGFloat(min(1, max(0, f))))
+            }
+        }
+        .frame(height: 6)
+        .animation(.easeOut(duration: 0.4), value: f)
     }
 }
 
