@@ -14,6 +14,8 @@ import json
 import os
 import sys
 
+from pymobiledevice3.exceptions import StartServiceError
+
 from .device import (
     NoDeviceError,
     NotTrustedError,
@@ -22,7 +24,7 @@ from .device import (
     summarize_info,
 )
 from .preflight import FAIL, run_preflight, worst_status
-from .tunnel import probe_tunnel
+from .tunnel import TunnelError, UserspaceTunnel, probe_tunnel
 
 
 def main() -> int:
@@ -56,6 +58,15 @@ def main() -> int:
     p_serve.add_argument("--host", default="127.0.0.1", help="Bind host (defaut: 127.0.0.1).")
     p_serve.add_argument("--port", type=int, default=8765, help="Bind port (defaut: 8765).")
 
+    p_cap = sub.add_parser(
+        "capture", help="Sniffe le trafic brut vers un fichier .pcap (pcapng)."
+    )
+    p_cap.add_argument("--out", "-o", default="capture.pcapng", help="Fichier de sortie.")
+    p_cap.add_argument("--count", "-c", type=int, default=200, help="Nombre de paquets (defaut: 200).")
+    p_cap.add_argument("--process", help="Filtre par nom de process ou pid.")
+    p_cap.add_argument("--iface", help="Filtre par interface (ex: en0, pdp_ip0).")
+    p_cap.add_argument("--udid", help="UDID cible (defaut: premier device).")
+
     args = parser.parse_args()
 
     try:
@@ -67,6 +78,8 @@ def main() -> int:
             return asyncio.run(_cmd_tunnel_check(args))
         if args.cmd == "serve":
             return _cmd_serve(args)
+        if args.cmd == "capture":
+            return _cmd_capture(args)
     except KeyboardInterrupt:
         print("\ninterrompu.", file=sys.stderr)
         return 130
@@ -151,6 +164,53 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(0)
+
+
+def _cmd_capture(args: argparse.Namespace) -> int:
+    async def _run() -> None:
+        from pymobiledevice3.services.pcapd import PcapdService
+
+        tunnel = UserspaceTunnel(args.udid)
+        rsd = await tunnel.open(timeout_s=30)
+        svc = PcapdService(rsd)
+        with open(args.out, "wb") as fh:
+            await svc.write_to_pcap(
+                fh,
+                svc.watch(
+                    packets_count=args.count,
+                    process=args.process,
+                    interface_name=args.iface,
+                ),
+            )
+
+    print(
+        f"Capture de {args.count} paquets vers {args.out} (Ctrl-C pour stopper)...",
+        file=sys.stderr,
+    )
+    code = 0
+    try:
+        asyncio.run(_run())
+        print(f"OK: paquets ecrits dans {args.out}", file=sys.stderr)
+    except TunnelError as exc:
+        print(f"erreur: {exc}", file=sys.stderr)
+        code = 3
+    except KeyboardInterrupt:
+        print("\ninterrompu (fichier partiel ecrit).", file=sys.stderr)
+        code = 130
+    except StartServiceError:
+        print(
+            "erreur: le device a refuse de demarrer pcapd "
+            "(com.apple.pcapd.shim.remote). Sur iOS 26, ce service est gate cote "
+            "device et ne demarre pas via le tunnel userspace (alors que syslog, "
+            "lui, marche). La vue reseau live par connexion (RxBytes/TxBytes/RTT) "
+            "reste disponible via `iphone-observer serve`.",
+            file=sys.stderr,
+        )
+        code = 4
+    # Threads PyTCP du tunnel: sortie nette.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":

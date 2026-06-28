@@ -40,7 +40,21 @@ uv run iphone-observer info --json     # dump lockdown complet
 # Collector + dashboard live (tunnel + sysmontap -> WebSocket)
 uv run iphone-observer serve           # http://127.0.0.1:8765
 uv run iphone-observer serve --interval 500 --port 8765
+
+# Capture pcap brute (voir limite ci-dessous)
+uv run iphone-observer capture -o capture.pcapng --count 500
 ```
+
+## Limites connues (iOS 26)
+
+- **pcap**: le service `com.apple.pcapd.shim.remote` est annonce par le device
+  mais refuse de demarrer via le tunnel userspace (StartServiceError, gate cote
+  iOS 26). La commande `capture` est en place mais le device la rejette. La vue
+  reseau live (channel `networking`) couvre RxBytes/TxBytes/RTT par connexion.
+- **pid reseau**: le channel networking renvoie pid = -2 pour la plupart des
+  connexions (iOS n'attribue pas le pid par connexion), donc le nom de process
+  est rarement resolu cote reseau.
+- **etat thermique**: non expose proprement; on remonte la temperature batterie.
 
 ## Schema d'events
 
@@ -59,7 +73,7 @@ Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 - [x] Phase 2: sysmontap -> WebSocket -> dashboard
 - [x] Phase 3: batterie / diagnostics (temperature, voltage, amperage, cycles, sante, chargeur)
 - [x] Phase 4: syslog (filtre + rate-limite) + detecteur d'indexation (CPU des daemons, hysteresis)
-- [ ] Phase 5: reseau (pcap + networking)
+- [x] Phase 5: reseau (channel networking live; pcap gate par iOS 26, voir limites)
 - [ ] Phase 6: storage + timeline unifiee
 - [ ] Phase 7: shell natif
 

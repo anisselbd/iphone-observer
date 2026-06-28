@@ -27,9 +27,12 @@ const els = {
   idxState: document.getElementById("idx-state"),
   idxDetail: document.getElementById("idx-detail"),
   syslog: document.getElementById("syslog"),
+  netTotals: document.getElementById("net-totals"),
+  netRows: document.getElementById("net-rows"),
 };
 
 let lastBatteryAt = 0;
+let procNames = {}; // pid -> name, alimente par sysmontap, utilise par le reseau
 
 let sort = { key: "cpu", dir: "desc" };
 let lastTick = null;      // dernier data de process_tick
@@ -103,6 +106,9 @@ function escapeHtml(s) {
 function applyTick(data) {
   lastTick = data;
   lastTickAt = Date.now() / 1000;
+  const names = {};
+  for (const p of data.processes || []) names[p.pid] = p.name;
+  procNames = names;
   renderTotals(data);
   renderRows(data.processes || []);
   els.statusLine.textContent =
@@ -175,12 +181,49 @@ function appendLog(d) {
   if (atBottom) c.scrollTop = c.scrollHeight;
 }
 
+function fmtRate(bps) {
+  if (bps >= 1e6) return (bps / 1e6).toFixed(1) + " Mo/s";
+  if (bps >= 1e3) return (bps / 1e3).toFixed(1) + " Ko/s";
+  return Math.round(bps) + " o/s";
+}
+function fmtBytes2(b) {
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + " Mo";
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + " Ko";
+  return b + " o";
+}
+
+function renderNetwork(d) {
+  const t = d.totals || {};
+  const ifaces = (d.interfaces || []).join(", ");
+  els.netTotals.textContent =
+    `${t.count} connexions, down ${fmtRate(t.rx_rate)}, up ${fmtRate(t.tx_rate)}` +
+    (ifaces ? ` | interfaces: ${ifaces}` : "");
+  const frag = document.createDocumentFragment();
+  for (const c of d.connections || []) {
+    const name = procNames[c.pid] || (c.pid >= 0 ? `pid ${c.pid}` : "systeme");
+    const remote = c.remote_addr ? `${c.remote_addr}:${c.remote_port}` : "n/d";
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td>${escapeHtml(name)}</td>` +
+      `<td class="mono">${escapeHtml(remote)}</td>` +
+      `<td>${escapeHtml(c.iface)}</td>` +
+      `<td class="num">${fmtRate(c.rx_rate)}</td>` +
+      `<td class="num">${fmtRate(c.tx_rate)}</td>` +
+      `<td class="num">${c.rtt_ms != null ? c.rtt_ms + " ms" : "-"}</td>` +
+      `<td class="num">${fmtBytes2(c.rx_bytes + c.tx_bytes)}</td>`;
+    frag.appendChild(tr);
+  }
+  els.netRows.replaceChildren(frag);
+}
+
 function handleEvent(ev) {
   if (ev.source === "sysmontap" && ev.type === "process_tick") {
     clearError();
     applyTick(ev.data);
   } else if (ev.source === "diagnostics" && ev.type === "battery") {
     renderBattery(ev.data);
+  } else if (ev.source === "networking" && ev.type === "connections") {
+    renderNetwork(ev.data);
   } else if (ev.source === "analyzer" && ev.type === "indexing") {
     renderIndexing(ev.data);
   } else if (ev.source === "syslog" && ev.type === "line") {

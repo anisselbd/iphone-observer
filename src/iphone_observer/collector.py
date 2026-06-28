@@ -17,7 +17,7 @@ from typing import Awaitable, Callable, Optional
 from .analyzers import indexing
 from .device import discover_device
 from .events import SOURCE_COLLECTOR, EventBus
-from .sources import diagnostics, syslog, sysmontap
+from .sources import diagnostics, networking, syslog, sysmontap
 from .tunnel import TunnelError, UserspaceTunnel
 
 # Une source: coroutine run(rsd, bus, **opts). On la relance a chaque tunnel.
@@ -129,6 +129,7 @@ class Collector:
             ("sysmontap", sysmontap.run, {"interval_ms": self.interval_ms}),
             ("diagnostics", diagnostics.run, {"interval_s": self.battery_interval_s}),
             ("syslog", syslog.run, {}),
+            ("networking", networking.run, {}),
         ]
         tasks = [
             asyncio.create_task(run(rsd, self.bus, **opts), name=f"source:{name}")
