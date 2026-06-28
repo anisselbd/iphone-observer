@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .collector import Collector
@@ -56,6 +56,17 @@ def make_app(
         if collector.storage is None:
             return {"available": False, "reason": "storage desactive"}
         return await collector.storage.timeline(minutes=minutes)
+
+    @app.get("/api/screenshot")
+    async def screenshot() -> Response:
+        try:
+            png = await collector.take_screenshot()
+        except Exception as exc:  # noqa: BLE001 - on renvoie une erreur lisible
+            return JSONResponse(
+                status_code=503,
+                content={"error": f"{type(exc).__name__}: {exc}"},
+            )
+        return Response(content=png, media_type="image/png")
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

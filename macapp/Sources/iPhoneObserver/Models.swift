@@ -125,6 +125,30 @@ struct SystemStats {
     let netOutPps: Int?
 }
 
+struct DeviceStorage {
+    let totalBytes: Double
+    let freeBytes: Double
+    let usedBytes: Double
+    var totalGo: Double { totalBytes / 1e9 }
+    var freeGo: Double { freeBytes / 1e9 }
+    var usedGo: Double { usedBytes / 1e9 }
+    var fraction: Double { totalBytes > 0 ? usedBytes / totalBytes : 0 }
+}
+
+struct AppInfo: Identifiable {
+    let bundle: String
+    let name: String
+    let version: String
+    var id: String { bundle }
+}
+
+struct CrashInfo: Identifiable {
+    let process: String
+    let date: String
+    let file: String
+    var id: String { file }
+}
+
 struct TimelinePoint {
     let t: Double
     let v: Double

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable, Optional
 
-from .analyzers import indexing
+from .analyzers import deviceinfo, indexing
 from .device import discover_device
 from .events import SOURCE_COLLECTOR, EventBus
 from .sources import diagnostics, graphics, networking, syslog, sysmontap
@@ -45,6 +45,7 @@ class Collector:
         self._stop = asyncio.Event()
         self._cpu_cores: Optional[int] = None
         self._device_data: dict = {}
+        self._rsd = None  # RSD du tunnel courant, pour les actions a la demande
 
     # --- cycle de vie ---------------------------------------------------------
 
@@ -53,6 +54,9 @@ class Collector:
         # Taches longues, abonnees au bus, independantes du tunnel.
         self._analyzer_tasks = [
             asyncio.create_task(indexing.run(self.bus), name="analyzer:indexing"),
+            asyncio.create_task(
+                deviceinfo.run(self.bus, self.udid), name="analyzer:deviceinfo"
+            ),
         ]
         if self.storage is not None:
             await self.storage.open()
@@ -138,6 +142,7 @@ class Collector:
             try:
                 self._set_state("connecting")
                 rsd = await self._tunnel.open()
+                self._rsd = rsd
                 self._set_state("connected")
                 backoff = 1.0
                 if self._cpu_cores is None:
@@ -150,6 +155,7 @@ class Collector:
             except Exception as exc:  # noqa: BLE001 - on reconnecte, jamais de crash
                 self._emit_error("collector", f"{type(exc).__name__}: {exc}")
             finally:
+                self._rsd = None
                 await self._tunnel.close()
 
             if self._stop.is_set():
@@ -194,6 +200,20 @@ class Collector:
                 if exc is not None:
                     raise exc
         raise TunnelError("une source s'est arretee (flux interrompu)")
+
+    # --- actions a la demande -------------------------------------------------
+
+    async def take_screenshot(self) -> bytes:
+        """Capture l'ecran via le tunnel courant (PNG). Leve si pas connecte."""
+        rsd = self._rsd
+        if rsd is None:
+            raise RuntimeError("tunnel non connecte: capture impossible pour l'instant.")
+        from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+        from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
+
+        async with DvtProvider(rsd) as dvt:
+            async with Screenshot(dvt) as sc:
+                return await sc.get_screenshot()
 
     async def _sleep_or_stop(self, delay: float) -> None:
         try:

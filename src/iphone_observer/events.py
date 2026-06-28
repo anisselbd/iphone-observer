@@ -32,6 +32,7 @@ SOURCE_NETWORKING = "networking"
 SOURCE_PCAP = "pcap"
 SOURCE_ANALYZER = "analyzer"
 SOURCE_GRAPHICS = "graphics"
+SOURCE_DEVICEINFO = "deviceinfo"
 
 
 @dataclass(slots=True)

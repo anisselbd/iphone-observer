@@ -22,6 +22,12 @@ final class CollectorClient: ObservableObject {
     @Published var memory: Memory?
     @Published var systemStats: SystemStats?
     @Published var graphics: GraphicsStats?
+    @Published var storage: DeviceStorage?
+    @Published var apps: [AppInfo] = []
+    @Published var crashes: [CrashInfo] = []
+    @Published var screenshot: NSImage?
+    @Published var screenshotError: String?
+    @Published var screenshotLoading: Bool = false
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -91,6 +97,30 @@ final class CollectorClient: ObservableObject {
         running = false
         task?.cancel(with: .goingAway, reason: nil)
         if let sidecar, sidecar.isRunning { sidecar.terminate() }
+    }
+
+    // Capture d'ecran a la demande via l'endpoint qui reutilise le tunnel vivant.
+    func fetchScreenshot() async {
+        guard let url = URL(string: "http://\(host):\(port)/api/screenshot") else { return }
+        screenshotLoading = true
+        screenshotError = nil
+        defer { screenshotLoading = false }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 15
+            let (data, resp) = try await session.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 200, let img = NSImage(data: data) {
+                screenshot = img
+            } else if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let err = obj["error"] as? String {
+                screenshotError = err
+            } else {
+                screenshotError = "capture indisponible (code \(code))"
+            }
+        } catch {
+            screenshotError = error.localizedDescription
+        }
     }
 
     private func ensureCollectorAndConnect() async {
@@ -217,6 +247,28 @@ final class CollectorClient: ObservableObject {
                                      fps: nil, gpuMemInuseMb: nil, available: false,
                                      reason: d["reason"] as? String)
         case ("diagnostics", "battery"): battery = parseBattery(d)
+        case ("deviceinfo", "storage"):
+            if let total = numD(d["total_bytes"]), total > 0 {
+                storage = DeviceStorage(
+                    totalBytes: total,
+                    freeBytes: numD(d["free_bytes"]) ?? 0,
+                    usedBytes: numD(d["used_bytes"]) ?? 0
+                )
+            }
+        case ("deviceinfo", "apps"):
+            apps = (d["apps"] as? [[String: Any]] ?? []).compactMap { a in
+                guard let bundle = a["bundle"] as? String else { return nil }
+                return AppInfo(bundle: bundle,
+                               name: a["name"] as? String ?? bundle,
+                               version: a["version"] as? String ?? "")
+            }
+        case ("deviceinfo", "crashes"):
+            crashes = (d["items"] as? [[String: Any]] ?? []).compactMap { c in
+                guard let file = c["file"] as? String else { return nil }
+                return CrashInfo(process: c["process"] as? String ?? "?",
+                                 date: c["date"] as? String ?? "",
+                                 file: file)
+            }
         case ("analyzer", "indexing"): indexing = parseIndexing(d)
         case ("networking", "connections"): applyNet(d)
         case ("syslog", "line"): applyLog(d)

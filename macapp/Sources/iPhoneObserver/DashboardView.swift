@@ -46,6 +46,7 @@ struct DashboardView: View {
                 ProcessTab().tabItem { Label("Process", systemImage: "cpu") }
                 TimelineTab().tabItem { Label("Timeline", systemImage: "chart.xyaxis.line") }
                 NetworkTab().tabItem { Label("Reseau", systemImage: "network") }
+                DeviceTab().tabItem { Label("Appareil", systemImage: "iphone") }
                 LogsTab().tabItem { Label("Logs", systemImage: "text.alignleft") }
             }
         }
@@ -671,6 +672,156 @@ struct NetworkTab: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
             .padding(12)
+        }
+    }
+}
+
+// MARK: - Appareil tab (stockage, capture, crashs, apps)
+
+struct DeviceTab: View {
+    @EnvironmentObject var client: CollectorClient
+    @State private var appQuery = ""
+    @State private var showShot = false
+
+    private var filteredApps: [AppInfo] {
+        appQuery.isEmpty ? client.apps
+            : client.apps.filter { $0.name.localizedCaseInsensitiveContains(appQuery)
+                                || $0.bundle.localizedCaseInsensitiveContains(appQuery) }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    storageCard
+                    screenshotCard
+                }
+                crashesCard
+                appsCard
+            }
+            .padding(12)
+        }
+    }
+
+    private var storageCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Stockage", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary)
+                if let s = client.storage {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(String(format: "%.0f", s.usedGo))
+                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        Text("/ \(String(format: "%.0f", s.totalGo)) Go utilises").foregroundStyle(.secondary)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.08))
+                            Capsule().fill(Color.accentBlue)
+                                .frame(width: geo.size.width * CGFloat(min(1, max(0, s.fraction))))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(String(format: "%.0f", s.freeGo)) Go libres").font(.caption2).foregroundStyle(.tertiary)
+                } else {
+                    Text("Lecture du stockage...").font(.caption).foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var screenshotCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Capture d'ecran", systemImage: "camera.viewfinder").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        Task { await client.fetchScreenshot() }
+                    } label: {
+                        if client.screenshotLoading { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.triangle.2.circlepath") }
+                    }
+                    .buttonStyle(.borderless).help("Capturer l'ecran de l'iPhone")
+                }
+                if let img = client.screenshot {
+                    Image(nsImage: img).resizable().scaledToFit()
+                        .frame(maxHeight: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.1)))
+                        .onTapGesture { showShot = true }
+                } else if let err = client.screenshotError {
+                    Text(err).font(.caption).foregroundStyle(Color.warnYellow)
+                        .frame(maxWidth: .infinity, minHeight: 80)
+                } else {
+                    Text("Clique sur recharger pour capturer l'ecran.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(isPresented: $showShot) {
+            if let img = client.screenshot {
+                VStack {
+                    Image(nsImage: img).resizable().scaledToFit().padding()
+                    Button("Fermer") { showShot = false }.padding(.bottom)
+                }
+                .frame(width: 420, height: 760).background(windowBackground)
+            }
+        }
+    }
+
+    private var crashesCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Rapports recents (\(client.crashes.count))", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Inclut crashs, jetsam et rapports de ressources (.ips). La plupart sont benins.")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                if client.crashes.isEmpty {
+                    Text("Aucun rapport.").font(.caption).foregroundStyle(.tertiary).padding(.vertical, 6)
+                } else {
+                    ForEach(client.crashes.prefix(12)) { c in
+                        HStack {
+                            Text(c.process).font(.system(.caption, design: .monospaced)).lineLimit(1)
+                            Spacer()
+                            Text(c.date).font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                        }
+                        .padding(.vertical, 1)
+                    }
+                }
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var appsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Apps installees (\(client.apps.count))", systemImage: "square.grid.2x2")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.tertiary)
+                        TextField("Filtrer", text: $appQuery).textFieldStyle(.plain).frame(width: 150)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.05), in: Capsule())
+                }
+                Table(filteredApps) {
+                    TableColumn("Nom") { a in Text(a.name).fontWeight(.medium).lineLimit(1) }
+                    TableColumn("Version") { a in Text(a.version).monospacedDigit().foregroundStyle(.secondary) }
+                        .width(min: 70, ideal: 90)
+                    TableColumn("Bundle ID") { a in Text(a.bundle).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1) }
+                }
+                .tableStyle(.inset(alternatesRowBackgrounds: true))
+                .frame(minHeight: 240)
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
