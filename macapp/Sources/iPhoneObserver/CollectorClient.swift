@@ -28,6 +28,14 @@ final class CollectorClient: ObservableObject {
     @Published var screenshot: NSImage?
     @Published var screenshotError: String?
     @Published var screenshotLoading: Bool = false
+
+    // Alertes (#12): seuils CPU/temperature + indexation terminee.
+    @Published var notificationsEnabled: Bool = true
+    @Published var alerts: [AlertItem] = []
+    @Published var cpuAlertPct: Double = 85   // % utilisation (normalise coeurs)
+    @Published var tempAlertC: Double = 39     // temperature batterie
+    private var cpuOverCount = 0               // ticks consecutifs au-dessus du seuil
+    private var lastNotified: [String: Date] = [:]  // anti-spam par type
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -246,7 +254,10 @@ final class CollectorClient: ObservableObject {
             graphics = GraphicsStats(gpuUtil: nil, rendererUtil: nil, tilerUtil: nil,
                                      fps: nil, gpuMemInuseMb: nil, available: false,
                                      reason: d["reason"] as? String)
-        case ("diagnostics", "battery"): battery = parseBattery(d)
+        case ("diagnostics", "battery"):
+            let b = parseBattery(d)
+            battery = b
+            checkTempAlert(b)
         case ("deviceinfo", "storage"):
             if let total = numD(d["total_bytes"]), total > 0 {
                 storage = DeviceStorage(
@@ -269,7 +280,10 @@ final class CollectorClient: ObservableObject {
                                  date: c["date"] as? String ?? "",
                                  file: file)
             }
-        case ("analyzer", "indexing"): indexing = parseIndexing(d)
+        case ("analyzer", "indexing"):
+            let idx = parseIndexing(d)
+            checkIndexingAlert(prev: indexing, next: idx)
+            indexing = idx
         case ("networking", "connections"): applyNet(d)
         case ("syslog", "line"): applyLog(d)
         case ("collector", "device"): applyDevice(d)
@@ -290,6 +304,8 @@ final class CollectorClient: ObservableObject {
                 topName: t["top_name"] as? String ?? "-",
                 topCpu: numD(t["top_cpu"]) ?? 0
             )
+            let util = Double(min(100, (totals?.aggregateCpu ?? 0) / Double(max(1, cpuCores))))
+            checkCpuAlert(util: util)
         }
         if let m = d["memory"] as? [String: Any], let total = numI(m["total_mb"]), total > 0 {
             memory = Memory(
@@ -436,6 +452,46 @@ final class CollectorClient: ObservableObject {
         let transport = d["transport"] as? String ?? ""
         device = "\(name) (\(model), iOS \(ios), \(transport))"
         if let cores = numI(d["cpu_cores"]), cores > 0 { cpuCores = cores }
+    }
+
+    // MARK: - Alertes (#12)
+
+    private func raiseAlert(kind: String, title: String, body: String, debounce: TimeInterval) {
+        guard notificationsEnabled else { return }
+        let now = Date()
+        if let last = lastNotified[kind], now.timeIntervalSince(last) < debounce { return }
+        lastNotified[kind] = now
+        let item = AlertItem(time: now, kind: kind, title: title, body: body)
+        alerts.insert(item, at: 0)
+        if alerts.count > 50 { alerts.removeLast(alerts.count - 50) }
+        NotificationManager.shared.notify(title: title, body: body, id: "\(kind)-\(item.id.uuidString)")
+    }
+
+    private func checkCpuAlert(util: Double) {
+        if util >= cpuAlertPct {
+            cpuOverCount += 1
+            // ~5 ticks (5 s) au-dessus du seuil pour eviter les pics ponctuels.
+            if cpuOverCount >= 5 {
+                let top = totals?.topName ?? "?"
+                raiseAlert(kind: "cpu", title: "CPU eleve sur l'iPhone",
+                           body: "Utilisation \(Int(util)) % (top: \(top)).", debounce: 180)
+            }
+        } else {
+            cpuOverCount = 0
+        }
+    }
+
+    private func checkTempAlert(_ b: Battery) {
+        guard let t = b.temperatureC, t >= tempAlertC else { return }
+        raiseAlert(kind: "temp", title: "Temperature batterie elevee",
+                   body: String(format: "%.1f C sur l'iPhone.", t), debounce: 300)
+    }
+
+    private func checkIndexingAlert(prev: Indexing?, next: Indexing) {
+        if prev?.state == "indexing", next.state == "idle" {
+            raiseAlert(kind: "indexing", title: "Indexation terminee",
+                       body: "L'iPhone a fini d'indexer (Spotlight au repos).", debounce: 60)
+        }
     }
 
     // MARK: - Helpers

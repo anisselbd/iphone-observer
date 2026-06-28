@@ -73,7 +73,108 @@ struct HeaderBar: View {
                 Label("collector auto", systemImage: "bolt.horizontal.circle")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
+            AlertsBell()
             StatePill(state: client.state)
+        }
+    }
+}
+
+struct AlertsBell: View {
+    @EnvironmentObject var client: CollectorClient
+    @State private var show = false
+
+    var body: some View {
+        Button { show.toggle() } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: client.notificationsEnabled ? "bell.fill" : "bell.slash")
+                    .foregroundStyle(client.alerts.isEmpty ? Color.secondary : Color.warnYellow)
+                if !client.alerts.isEmpty {
+                    Circle().fill(Color.errRed).frame(width: 7, height: 7).offset(x: 3, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .popover(isPresented: $show, arrowEdge: .bottom) { AlertsPopover() }
+    }
+}
+
+struct AlertsPopover: View {
+    @EnvironmentObject var client: CollectorClient
+
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Notifications macOS", isOn: Binding(
+                get: { client.notificationsEnabled },
+                set: { client.notificationsEnabled = $0 })).font(.callout.weight(.semibold))
+            HStack(spacing: 14) {
+                threshold("CPU >", value: Binding(get: { client.cpuAlertPct },
+                                                  set: { client.cpuAlertPct = $0 }),
+                          range: 50...100, step: 5, suffix: "%")
+                threshold("Temp >", value: Binding(get: { client.tempAlertC },
+                                                   set: { client.tempAlertC = $0 }),
+                          range: 35...45, step: 1, suffix: "C")
+            }
+            Divider()
+            if client.alerts.isEmpty {
+                Text("Aucune alerte pour l'instant.").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+            } else {
+                HStack {
+                    Text("\(client.alerts.count) alertes").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Effacer") { client.alerts.removeAll() }.buttonStyle(.borderless).font(.caption)
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(client.alerts.prefix(20)) { a in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: icon(a.kind)).foregroundStyle(color(a.kind)).font(.caption)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(a.title).font(.caption.weight(.semibold))
+                                    Text(a.body).font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(Self.timeFmt.string(from: a.time)).font(.caption2)
+                                    .foregroundStyle(.tertiary).monospacedDigit()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 240)
+            }
+        }
+        .padding(14).frame(width: 340)
+    }
+
+    private func threshold(_ label: String, value: Binding<Double>, range: ClosedRange<Double>,
+                           step: Double, suffix: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Stepper(value: value, in: range, step: step) {
+                Text("\(Int(value.wrappedValue)) \(suffix)").font(.caption.weight(.medium)).monospacedDigit()
+            }.labelsHidden()
+            Text("\(Int(value.wrappedValue)) \(suffix)").font(.caption.weight(.medium)).monospacedDigit()
+        }
+    }
+
+    private func icon(_ kind: String) -> String {
+        switch kind {
+        case "cpu": return "cpu"
+        case "temp": return "thermometer.high"
+        case "indexing": return "magnifyingglass"
+        default: return "bell"
+        }
+    }
+    private func color(_ kind: String) -> Color {
+        switch kind {
+        case "cpu": return .accentBlue
+        case "temp": return .warnYellow
+        case "indexing": return .okGreen
+        default: return .secondary
         }
     }
 }

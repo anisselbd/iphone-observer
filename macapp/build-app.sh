@@ -43,6 +43,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Signature ad-hoc: donne une identite stable au bundle, requise pour que les
+# notifications macOS (UNUserNotificationCenter) soient autorisees sur une app
+# locale non distribuee.
+echo "Signature ad-hoc..."
+codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "(codesign ignore)"
+
 # Force LaunchServices a relire le bundle, sinon l'icone reste en cache obsolete
 # quand on reconstruit au meme chemin.
 LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

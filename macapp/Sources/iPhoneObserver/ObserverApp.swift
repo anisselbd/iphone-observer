@@ -19,7 +19,10 @@ struct ObserverApp: App {
             DashboardView()
                 .environmentObject(client)
                 .frame(minWidth: 860, minHeight: 600)
-                .onAppear { client.start() }
+                .onAppear {
+                    client.start()
+                    NotificationManager.shared.requestAuthorization()
+                }
         }
 
         MenuBarExtra {
