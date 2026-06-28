@@ -57,6 +57,30 @@ def make_app(
             return {"available": False, "reason": "storage desactive"}
         return await collector.storage.timeline(minutes=minutes)
 
+    @app.get("/api/export.csv")
+    async def export_csv(minutes: float = 60.0) -> Response:
+        if collector.storage is None:
+            return JSONResponse(status_code=503, content={"error": "storage desactive"})
+        rep = await collector.storage.report(minutes=minutes, udid=collector.udid or "")
+        if not rep.get("available"):
+            return JSONResponse(status_code=503, content={"error": rep.get("reason", "indisponible")})
+        return Response(
+            content=rep["csv"], media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=iphone-observer-session.csv"},
+        )
+
+    @app.get("/api/export.md")
+    async def export_md(minutes: float = 60.0) -> Response:
+        if collector.storage is None:
+            return JSONResponse(status_code=503, content={"error": "storage desactive"})
+        rep = await collector.storage.report(minutes=minutes, udid=collector.udid or "")
+        if not rep.get("available"):
+            return JSONResponse(status_code=503, content={"error": rep.get("reason", "indisponible")})
+        return Response(
+            content=rep["summary"], media_type="text/markdown",
+            headers={"Content-Disposition": "attachment; filename=iphone-observer-session.md"},
+        )
+
     @app.get("/api/screenshot")
     async def screenshot() -> Response:
         try:

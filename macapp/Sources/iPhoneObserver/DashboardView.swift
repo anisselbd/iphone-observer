@@ -882,6 +882,7 @@ struct DeviceTab: View {
     @EnvironmentObject var client: CollectorClient
     @State private var appQuery = ""
     @State private var showShot = false
+    @State private var exportMinutes: Double = 60
 
     private var filteredApps: [AppInfo] {
         appQuery.isEmpty ? client.apps
@@ -892,6 +893,7 @@ struct DeviceTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                exportBar
                 HStack(alignment: .top, spacing: 12) {
                     storageCard
                     screenshotCard
@@ -900,6 +902,30 @@ struct DeviceTab: View {
                 appsCard
             }
             .padding(12)
+        }
+    }
+
+    private var exportBar: some View {
+        Card {
+            HStack(spacing: 12) {
+                Label("Export de session", systemImage: "square.and.arrow.up").font(.caption).foregroundStyle(.secondary)
+                Picker("", selection: $exportMinutes) {
+                    Text("10 min").tag(10.0)
+                    Text("30 min").tag(30.0)
+                    Text("1 h").tag(60.0)
+                    Text("3 h").tag(180.0)
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 230)
+                Button {
+                    Task { await client.exportSession(minutes: exportMinutes) }
+                } label: {
+                    Label("Exporter (CSV + resume)", systemImage: "tray.and.arrow.down")
+                }
+                Spacer()
+                if let s = client.exportStatus {
+                    Text(s).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+            .padding(.vertical, 10).padding(.horizontal, 14)
         }
     }
 

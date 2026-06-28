@@ -138,6 +138,46 @@ final class CollectorClient: ObservableObject {
         if let sidecar, sidecar.isRunning { sidecar.terminate() }
     }
 
+    // Export de session (#15): CSV tidy + resume Markdown, sauves dans un dossier.
+    @Published var exportStatus: String?
+
+    func exportSession(minutes: Double = 60) async {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Exporter ici"
+        panel.message = "Choisis un dossier pour le rapport de session"
+        guard panel.runModal() == .OK, let dir = panel.url else { return }
+        exportStatus = "Export en cours..."
+        do {
+            let m = Int(minutes)
+            let csv = try await fetchText("/api/export.csv?minutes=\(m)")
+            let md = try await fetchText("/api/export.md?minutes=\(m)")
+            try csv.write(to: dir.appendingPathComponent("iphone-observer-session.csv"),
+                          atomically: true, encoding: .utf8)
+            try md.write(to: dir.appendingPathComponent("iphone-observer-session.md"),
+                         atomically: true, encoding: .utf8)
+            exportStatus = "Exporte dans \(dir.lastPathComponent)/ (CSV + resume)"
+        } catch {
+            exportStatus = "Echec export: \(error.localizedDescription)"
+        }
+    }
+
+    private func fetchText(_ path: String) async throws -> String {
+        guard let url = URL(string: "http://\(host):\(port)\(path)") else { throw URLError(.badURL) }
+        let (data, resp) = try await session.data(from: url)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code != 200 {
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let e = obj["error"] as? String {
+                throw NSError(domain: "export", code: code, userInfo: [NSLocalizedDescriptionKey: e])
+            }
+            throw URLError(.badServerResponse)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // Capture d'ecran a la demande via l'endpoint qui reutilise le tunnel vivant.
     func fetchScreenshot() async {
         guard let url = URL(string: "http://\(host):\(port)/api/screenshot") else { return }

@@ -231,6 +231,82 @@ class Storage:
         async with self._lock:
             return await asyncio.to_thread(_do)
 
+    # --- export / rapport ----------------------------------------------------
+
+    async def report(self, minutes: float = 60.0, udid: str = "") -> dict[str, Any]:
+        """Construit un rapport de session: CSV tidy + resume Markdown."""
+        tl = await self.timeline(minutes=minutes, max_points=100000)
+        if not tl.get("available"):
+            return {"available": False, "reason": tl.get("reason", "storage indisponible")}
+
+        series: dict[str, list] = tl["series"]
+        from datetime import datetime, timezone
+
+        # CSV long format: metrique,timestamp,iso8601,valeur
+        lines = ["metric,timestamp,iso8601,value"]
+        for metric, points in series.items():
+            for ts, val in points:
+                iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                lines.append(f"{metric},{ts:.3f},{iso},{val}")
+        csv = "\n".join(lines) + "\n"
+
+        # Resume Markdown
+        def stat(points: list) -> Optional[dict[str, float]]:
+            vals = [p[1] for p in points if isinstance(p[1], (int, float))]
+            if not vals:
+                return None
+            return {
+                "min": min(vals), "max": max(vals),
+                "avg": sum(vals) / len(vals), "last": vals[-1], "n": len(vals),
+            }
+
+        since_iso = datetime.fromtimestamp(tl["since"], tz=timezone.utc).isoformat(timespec="seconds")
+        until_iso = datetime.fromtimestamp(tl["until"], tz=timezone.utc).isoformat(timespec="seconds")
+        md = [
+            "# Rapport de session iphone-observer",
+            "",
+            f"- Device: {udid or 'inconnu'}",
+            f"- Fenetre: {minutes:.0f} min ({since_iso} a {until_iso})",
+            f"- Events stockes: {tl['total_rows']}",
+            "",
+            "## Metriques",
+            "",
+            "| Metrique | min | moyenne | max | dernier | points |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+        labels = {
+            "cpu_aggregate": "CPU cumule (%)",
+            "mem_used_mb": "Memoire utilisee (Mo)",
+            "swap_mb": "Swap (Mo)",
+            "battery_temp_c": "Temperature batterie (C)",
+            "battery_level": "Niveau batterie (%)",
+            "disk_read_bps": "Disque lecture (o/s)",
+            "disk_write_bps": "Disque ecriture (o/s)",
+            "sysnet_in_bps": "Reseau in (o/s)",
+            "sysnet_out_bps": "Reseau out (o/s)",
+            "gpu_util": "GPU (%)",
+            "fps": "FPS",
+        }
+        for key, label in labels.items():
+            s = stat(series.get(key, []))
+            if s is None:
+                continue
+            md.append(
+                f"| {label} | {s['min']:.0f} | {s['avg']:.0f} | {s['max']:.0f} "
+                f"| {s['last']:.0f} | {s['n']} |"
+            )
+
+        idx = tl.get("indexing", [])
+        errs = tl.get("errors", [])
+        md += [
+            "",
+            f"## Indexation: {len(idx)} transitions"
+            + (f", dernier etat: {idx[-1][1]}" if idx else ""),
+            f"## Erreurs syslog (fenetre): {len(errs)}",
+        ]
+
+        return {"available": True, "csv": csv, "summary": "\n".join(md) + "\n", "minutes": minutes}
+
 
 def _decimate(rows: list[list[float]], max_points: int) -> list[list[float]]:
     """Reduit une serie a max_points par striding regulier."""
