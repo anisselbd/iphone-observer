@@ -57,7 +57,7 @@ Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 
 - [x] Phase 1: tunnel + connexion + device info
 - [x] Phase 2: sysmontap -> WebSocket -> dashboard
-- [ ] Phase 3: batterie / diagnostics
+- [x] Phase 3: batterie / diagnostics (temperature, voltage, amperage, cycles, sante, chargeur)
 - [ ] Phase 4: syslog + detecteur d'indexation
 - [ ] Phase 5: reseau (pcap + networking)
 - [ ] Phase 6: storage + timeline unifiee

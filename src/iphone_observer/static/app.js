@@ -14,7 +14,18 @@ const els = {
   tAge: document.getElementById("t-age"),
   rows: document.getElementById("rows"),
   statusLine: document.getElementById("status-line"),
+  bLevel: document.getElementById("b-level"),
+  bState: document.getElementById("b-state"),
+  bTemp: document.getElementById("b-temp"),
+  bVolt: document.getElementById("b-volt"),
+  bAmp: document.getElementById("b-amp"),
+  bCycles: document.getElementById("b-cycles"),
+  bHealth: document.getElementById("b-health"),
+  bAdapter: document.getElementById("b-adapter"),
+  bAge: document.getElementById("b-age"),
 };
+
+let lastBatteryAt = 0;
 
 let sort = { key: "cpu", dir: "desc" };
 let lastTick = null;      // dernier data de process_tick
@@ -94,10 +105,42 @@ function applyTick(data) {
     `${(data.processes || []).length} process, maj toutes les ${data.interval_ms} ms`;
 }
 
+function fmtNum(v, suffix = "", digits = 0) {
+  if (v === null || v === undefined) return "n/d";
+  return (typeof v === "number" ? v.toFixed(digits) : v) + suffix;
+}
+
+function renderBattery(b) {
+  lastBatteryAt = Date.now() / 1000;
+  els.bLevel.textContent = fmtNum(b.level_pct, " %");
+  let state = "inconnu";
+  if (b.is_charging) state = "en charge";
+  else if (b.fully_charged && b.external_connected) state = "plein (branche)";
+  else if (b.external_connected) state = "branche";
+  else state = "sur batterie";
+  els.bState.textContent = state;
+  els.bTemp.textContent = fmtNum(b.temperature_c, " C", 1);
+  els.bVolt.textContent = fmtNum(b.voltage_v, " V", 3);
+  els.bAmp.textContent = fmtNum(b.amperage_ma, " mA");
+  els.bCycles.textContent = fmtNum(b.cycle_count);
+  if (b.health_pct != null && b.full_capacity_mah != null && b.design_capacity_mah != null) {
+    els.bHealth.textContent =
+      `${b.health_pct} % (${b.full_capacity_mah}/${b.design_capacity_mah} mAh)`;
+  } else {
+    els.bHealth.textContent = fmtNum(b.health_pct, " %", 1);
+  }
+  els.bAdapter.textContent = b.adapter
+    ? (b.adapter.watts != null ? `${b.adapter.watts} W` : "") +
+      (b.adapter.description ? ` ${b.adapter.description}` : "") || "branche"
+    : "aucun";
+}
+
 function handleEvent(ev) {
   if (ev.source === "sysmontap" && ev.type === "process_tick") {
     clearError();
     applyTick(ev.data);
+  } else if (ev.source === "diagnostics" && ev.type === "battery") {
+    renderBattery(ev.data);
   } else if (ev.source === "collector" && ev.type === "device") {
     const d = ev.data;
     els.device.textContent = `${d.name} (${d.model}, iOS ${d.ios}, ${d.transport})`;
@@ -128,10 +171,13 @@ document.querySelectorAll("th[data-key]").forEach((th) => {
 });
 
 // Age du dernier tick, rafraichi en continu
+function ageLabel(at) {
+  const age = Date.now() / 1000 - at;
+  return age < 2 ? "a l'instant" : `il y a ${age.toFixed(0)} s`;
+}
 setInterval(() => {
-  if (!lastTickAt) return;
-  const age = Date.now() / 1000 - lastTickAt;
-  els.tAge.textContent = age < 2 ? "a l'instant" : `il y a ${age.toFixed(0)} s`;
+  if (lastTickAt) els.tAge.textContent = ageLabel(lastTickAt);
+  if (lastBatteryAt) els.bAge.textContent = "(" + ageLabel(lastBatteryAt) + ")";
 }, 500);
 
 function connect() {

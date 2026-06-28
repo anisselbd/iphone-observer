@@ -16,7 +16,7 @@ from typing import Awaitable, Callable, Optional
 
 from .device import discover_device
 from .events import SOURCE_COLLECTOR, EventBus
-from .sources import sysmontap
+from .sources import diagnostics, sysmontap
 from .tunnel import TunnelError, UserspaceTunnel
 
 # Une source: coroutine run(rsd, bus, **opts). On la relance a chaque tunnel.
@@ -24,9 +24,15 @@ SourceRun = Callable[..., Awaitable[None]]
 
 
 class Collector:
-    def __init__(self, udid: Optional[str] = None, interval_ms: int = 1000) -> None:
+    def __init__(
+        self,
+        udid: Optional[str] = None,
+        interval_ms: int = 1000,
+        battery_interval_s: float = 10.0,
+    ) -> None:
         self.udid = udid
         self.interval_ms = interval_ms
+        self.battery_interval_s = battery_interval_s
         self.bus = EventBus(udid=udid or "")
         self.state = "starting"
         self._tunnel = UserspaceTunnel(udid)
@@ -110,6 +116,7 @@ class Collector:
         s'arrete ou echoue, pour declencher une reconnexion complete."""
         specs: list[tuple[str, SourceRun, dict]] = [
             ("sysmontap", sysmontap.run, {"interval_ms": self.interval_ms}),
+            ("diagnostics", diagnostics.run, {"interval_s": self.battery_interval_s}),
         ]
         tasks = [
             asyncio.create_task(run(rsd, self.bus, **opts), name=f"source:{name}")

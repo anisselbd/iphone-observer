@@ -54,11 +54,23 @@ h1 { font-size: 16px; margin: 0; font-weight: 600; }
 }
 .hidden { display: none; }
 
+.section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  margin: 16px 0 0;
+  padding: 0 20px;
+  font-weight: 600;
+}
+.section-title .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.muted { color: var(--muted); }
+
 .totals {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 16px 20px;
+  padding: 12px 20px;
 }
 .metric {
   display: flex;
