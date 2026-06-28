@@ -1,50 +1,77 @@
 import SwiftUI
+import Charts
 
-struct WaitingView: View {
+// MARK: - Theme
+
+extension Color {
+    static let accentBlue = Color(red: 0.31, green: 0.63, blue: 1.0)
+    static let okGreen = Color(red: 0.21, green: 0.83, blue: 0.60)
+    static let warnYellow = Color(red: 0.98, green: 0.74, blue: 0.14)
+    static let errRed = Color(red: 0.97, green: 0.45, blue: 0.45)
+}
+
+private let windowBackground = LinearGradient(
+    colors: [Color(red: 0.07, green: 0.08, blue: 0.11), Color(red: 0.04, green: 0.05, blue: 0.07)],
+    startPoint: .top, endPoint: .bottom
+)
+
+struct Card<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        content
+            .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.07)))
+    }
+}
+
+// MARK: - Dashboard
+
+struct DashboardView: View {
     @EnvironmentObject var client: CollectorClient
 
-    private var message: String {
-        if let e = client.lastError, !e.isEmpty { return e }
-        switch client.state {
-        case "lancement du collector": return "Demarrage du collector..."
-        case "connecting", "connexion", "connected": return "Connexion a l'iPhone..."
-        default: return "Branche ton iPhone en USB et deverrouille-le."
+    var body: some View {
+        ZStack {
+            windowBackground.ignoresSafeArea()
+            if client.hasData { dashboard } else { WaitingView() }
         }
     }
+
+    private var dashboard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HeaderBar()
+            IndexingBanner()
+            HeroRow()
+            TabView {
+                ProcessTab().tabItem { Label("Process", systemImage: "cpu") }
+                TimelineTab().tabItem { Label("Timeline", systemImage: "chart.xyaxis.line") }
+                NetworkTab().tabItem { Label("Reseau", systemImage: "network") }
+                LogsTab().tabItem { Label("Logs", systemImage: "text.alignleft") }
+            }
+        }
+        .padding(18)
+    }
+}
+
+// MARK: - Header
+
+struct HeaderBar: View {
+    @EnvironmentObject var client: CollectorClient
 
     var body: some View {
-        VStack(spacing: 16) {
+        HStack(spacing: 12) {
             Image(systemName: "iphone.gen3")
-                .font(.system(size: 54))
-                .foregroundStyle(.secondary)
-            Text("En attente de l'iPhone")
-                .font(.title2.weight(.semibold))
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 480)
-            ProgressView().controlSize(.small).padding(.vertical, 4)
-            VStack(alignment: .leading, spacing: 6) {
-                checkItem("Branche l'iPhone en USB")
-                checkItem("Deverrouille-le")
-                checkItem("Mode developpeur active (Reglages > Confidentialite et securite)")
+                .font(.system(size: 22))
+                .foregroundStyle(Color.accentBlue)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("iphone-observer").font(.headline)
+                Text(client.device).font(.caption).foregroundStyle(.secondary)
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            Spacer()
             if client.sidecarManaged {
-                Label("collector lance par l'app", systemImage: "bolt.horizontal.circle")
-                    .font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
+                Label("collector auto", systemImage: "bolt.horizontal.circle")
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(40)
-    }
-
-    private func checkItem(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "circle.dotted")
-            Text(text)
+            StatePill(state: client.state)
         }
     }
 }
@@ -53,9 +80,9 @@ struct StatePill: View {
     let state: String
     private var color: Color {
         switch state {
-        case "connected": return .green
-        case "connecting", "reconnecting", "reconnexion", "lancement du collector": return .yellow
-        case "stopped", "deconnecte": return .red
+        case "connected": return .okGreen
+        case "connecting", "reconnecting", "reconnexion", "lancement du collector": return .warnYellow
+        case "stopped", "deconnecte": return .errRed
         default: return .gray
         }
     }
@@ -70,116 +97,188 @@ struct StatePill: View {
         }
     }
     var body: some View {
-        Text(label)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(color.opacity(0.18))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-    }
-}
-
-struct Metric: View {
-    let label: String
-    let value: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2).foregroundStyle(.secondary).textCase(.uppercase)
-            Text(value).font(.system(.title3, design: .rounded)).monospacedDigit()
+        HStack(spacing: 7) {
+            Circle().fill(color).frame(width: 8, height: 8)
+                .shadow(color: color.opacity(0.8), radius: 4)
+            Text(label).font(.caption.weight(.semibold))
         }
-        .padding(10)
-        .frame(minWidth: 110, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 11).padding(.vertical, 6)
+        .background(color.opacity(0.14), in: Capsule())
+        .foregroundStyle(color)
     }
 }
 
-struct DashboardView: View {
+// MARK: - Indexing banner
+
+struct IndexingBanner: View {
     @EnvironmentObject var client: CollectorClient
+    @State private var pulse = false
 
     var body: some View {
-        Group {
-            if client.hasData {
-                dashboard
-            } else {
-                WaitingView()
-            }
-        }
-    }
-
-    private var dashboard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            indexingBanner
-            batteryRow
-            TabView {
-                ProcessTab().tabItem { Text("Process") }
-                TimelineNativeView().tabItem { Text("Timeline") }
-                NetworkTab().tabItem { Text("Reseau") }
-                LogsTab().tabItem { Text("Logs") }
-            }
-        }
-        .padding(16)
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("iphone-observer").font(.headline)
-                Text(client.device).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if client.sidecarManaged {
-                Label("collector lance par l'app", systemImage: "bolt.horizontal.circle")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            StatePill(state: client.state)
-        }
-    }
-
-    @ViewBuilder private var indexingBanner: some View {
         if let idx = client.indexing {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(idx.state == "indexing" ? Color.yellow : (idx.state == "idle" ? .green : .gray))
-                    .frame(width: 10, height: 10)
+            let active = idx.state == "indexing"
+            let color: Color = active ? .warnYellow : (idx.state == "idle" ? .okGreen : .gray)
+            HStack(spacing: 10) {
+                Circle().fill(color).frame(width: 10, height: 10)
+                    .scaleEffect(active && pulse ? 1.35 : 1)
+                    .animation(active ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
                 Text(idx.label).font(.callout.weight(.semibold))
-                if idx.state == "indexing" && idx.activeNow {
+                if active && idx.activeNow {
                     Text("\(Int(idx.activeCpu)) % CPU cumule").font(.caption).foregroundStyle(.secondary)
                 } else if idx.state == "idle" {
                     Text("calme depuis \(idx.quietForS) s").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            .padding(10)
-            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(color.opacity(0.25)))
+            .onAppear { pulse = true }
         }
-    }
-
-    @ViewBuilder private var batteryRow: some View {
-        if let b = client.battery {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    Metric(label: "Niveau", value: b.levelPct.map { "\($0) %" } ?? "n/d")
-                    Metric(label: "Etat", value: b.stateLabel)
-                    Metric(label: "Temperature", value: b.temperatureC.map { String(format: "%.1f C", $0) } ?? "n/d")
-                    Metric(label: "Voltage", value: b.voltageV.map { String(format: "%.3f V", $0) } ?? "n/d")
-                    Metric(label: "Amperage", value: b.amperageMa.map { "\($0) mA" } ?? "n/d")
-                    Metric(label: "Cycles", value: b.cycleCount.map { "\($0)" } ?? "n/d")
-                    Metric(label: "Sante", value: healthText(b))
-                    Metric(label: "Chargeur", value: b.adapter ?? "aucun")
-                }
-            }
-        }
-    }
-
-    private func healthText(_ b: Battery) -> String {
-        guard let h = b.healthPct else { return "n/d" }
-        if let f = b.fullCapacity, let d = b.designCapacity {
-            return String(format: "%.1f %% (%d/%d)", h, f, d)
-        }
-        return String(format: "%.1f %%", h)
     }
 }
+
+// MARK: - Hero row (batterie + CPU + RAM)
+
+struct HeroRow: View {
+    @EnvironmentObject var client: CollectorClient
+
+    var body: some View {
+        HStack(spacing: 12) {
+            BatteryCard()
+            CpuCard()
+            RamCard()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct BatteryRing: View {
+    let level: Int
+    let charging: Bool
+    private var color: Color { level <= 20 ? .errRed : (charging ? .okGreen : .accentBlue) }
+    var body: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.08), lineWidth: 7)
+            Circle().trim(from: 0, to: CGFloat(max(0, min(100, level))) / 100)
+                .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: -2) {
+                Text("\(level)").font(.system(size: 20, weight: .semibold, design: .rounded))
+                Text("%").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 62, height: 62)
+        .animation(.easeOut(duration: 0.4), value: level)
+    }
+}
+
+struct BatteryCard: View {
+    @EnvironmentObject var client: CollectorClient
+    var body: some View {
+        Card {
+            HStack(spacing: 14) {
+                if let b = client.battery {
+                    BatteryRing(level: b.levelPct ?? 0, charging: b.isCharging)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label("Batterie", systemImage: "battery.100").font(.caption).foregroundStyle(.secondary)
+                        Text(b.stateLabel).font(.callout.weight(.medium))
+                        HStack(spacing: 10) {
+                            tempView(b.temperatureC)
+                            if let v = b.voltageV { miniStat("\(String(format: "%.2f", v)) V") }
+                            if let c = b.cycleCount { miniStat("\(Int(c)) cyc") }
+                        }
+                        if let h = b.healthPct { miniStat("sante \(String(format: "%.0f", h)) %") }
+                    }
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+        }
+    }
+    private func tempView(_ t: Double?) -> some View {
+        let color: Color = (t ?? 0) >= 40 ? .warnYellow : .secondary
+        return Label(t.map { String(format: "%.1f C", $0) } ?? "n/d", systemImage: "thermometer.medium")
+            .font(.caption).foregroundStyle(color)
+    }
+    private func miniStat(_ s: String) -> some View {
+        Text(s).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+    }
+}
+
+struct CpuCard: View {
+    @EnvironmentObject var client: CollectorClient
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("CPU agrege", systemImage: "cpu").font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(Int(client.totals?.aggregateCpu ?? 0))")
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    Text("%").foregroundStyle(.secondary)
+                }
+                Sparkline(points: client.timeline?.cpu ?? [], color: .accentBlue)
+                    .frame(height: 30)
+                if let t = client.totals {
+                    Text("top \(t.topName) (\(Int(t.topCpu)) %)")
+                        .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct RamCard: View {
+    @EnvironmentObject var client: CollectorClient
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("RAM (process)", systemImage: "memorychip").font(.caption).foregroundStyle(.secondary)
+                let mb = client.totals?.rssMbTotal ?? 0
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(mb >= 1024 ? String(format: "%.1f", mb / 1024) : String(format: "%.0f", mb))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    Text(mb >= 1024 ? "Go" : "Mo").foregroundStyle(.secondary)
+                }
+                Text("\(client.totals?.processCount ?? 0) process actifs")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct Sparkline: View {
+    let points: [TimelinePoint]
+    let color: Color
+    var body: some View {
+        if points.count < 2 {
+            Text("...").font(.caption2).foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Chart {
+                ForEach(points.indices, id: \.self) { i in
+                    AreaMark(x: .value("i", i), y: .value("v", points[i].v))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.35), color.opacity(0.02)],
+                                                        startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.catmullRom)
+                    LineMark(x: .value("i", i), y: .value("v", points[i].v))
+                        .foregroundStyle(color)
+                        .interpolationMethod(.catmullRom)
+                }
+            }
+            .chartXAxis(.hidden).chartYAxis(.hidden)
+        }
+    }
+}
+
+// MARK: - Process tab
 
 struct ProcessTab: View {
     @EnvironmentObject var client: CollectorClient
@@ -194,157 +293,211 @@ struct ProcessTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if let t = client.totals {
-                    Text("\(t.processCount) process, CPU agrege \(Int(t.aggregateCpu)) %, RAM \(String(format: "%.0f", t.rssMbTotal)) Mo, top \(t.topName) (\(String(format: "%.0f", t.topCpu)) %)")
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("\(client.totals?.processCount ?? 0) process")
                         .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.tertiary)
+                        TextField("Filtrer", text: $query).textFieldStyle(.plain).frame(width: 160)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.05), in: Capsule())
                 }
-                Spacer()
-                TextField("Filtrer", text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
+                Table(rows, sortOrder: $sortOrder) {
+                    TableColumn("PID", value: \.pid) { Text("\($0.pid)").monospacedDigit().foregroundStyle(.secondary) }
+                        .width(min: 56, ideal: 64)
+                    TableColumn("Process", value: \.name) { Text($0.name).fontWeight(.medium) }
+                    TableColumn("CPU %", value: \.cpu) { CpuCell(cpu: $0.cpu) }
+                        .width(min: 90, ideal: 100)
+                    TableColumn("RAM (Mo)", value: \.rssMb) { Text(String(format: "%.1f", $0.rssMb)).monospacedDigit() }
+                        .width(min: 80, ideal: 90)
+                    TableColumn("Threads", value: \.threads) { Text("\($0.threads)").monospacedDigit().foregroundStyle(.secondary) }
+                        .width(min: 64, ideal: 74)
+                }
+                .tableStyle(.inset(alternatesRowBackgrounds: true))
             }
-            // Tri interactif par colonne (defaut: CPU desc).
-            Table(rows, sortOrder: $sortOrder) {
-                TableColumn("PID", value: \.pid) { Text("\($0.pid)").monospacedDigit() }
-                    .width(min: 60, ideal: 70)
-                TableColumn("Process", value: \.name) { Text($0.name) }
-                TableColumn("CPU %", value: \.cpu) { Text(String(format: "%.1f", $0.cpu)).monospacedDigit() }
-                    .width(min: 70, ideal: 80)
-                TableColumn("RAM (Mo)", value: \.rssMb) { Text(String(format: "%.1f", $0.rssMb)).monospacedDigit() }
-                    .width(min: 80, ideal: 90)
-                TableColumn("Threads", value: \.threads) { Text("\($0.threads)").monospacedDigit() }
-                    .width(min: 70, ideal: 80)
-            }
+            .padding(12)
         }
     }
 }
 
-struct TimelineNativeView: View {
+struct CpuCell: View {
+    let cpu: Double
+    private var color: Color { cpu >= 80 ? .errRed : (cpu >= 30 ? .warnYellow : .primary) }
+    var body: some View {
+        HStack(spacing: 6) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.06))
+                    Capsule().fill(color.opacity(0.55))
+                        .frame(width: geo.size.width * CGFloat(min(cpu, 100) / 100))
+                }
+            }
+            .frame(width: 36, height: 5)
+            Text(String(format: "%.1f", cpu)).monospacedDigit().foregroundStyle(color)
+        }
+    }
+}
+
+// MARK: - Timeline tab (Swift Charts)
+
+struct TimelineTab: View {
     @EnvironmentObject var client: CollectorClient
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let tl = client.timeline,
-               !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
-                legend(tl)
-                Canvas { ctx, size in draw(ctx, size, tl) }
-                    .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
-                Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            } else {
-                Spacer()
-                Text("Timeline en cours de remplissage...")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                Spacer()
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                if let tl = client.timeline,
+                   !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
+                    series("CPU agrege", tl.cpu, .accentBlue) { "\(Int($0)) %" }
+                    series("Temperature batterie", tl.temp, .warnYellow) { String(format: "%.1f C", $0) }
+                    series("Debit reseau", tl.net, .okGreen) { formatRate(Int($0)) }
+                    Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                } else {
+                    Spacer()
+                    Label("Timeline en cours de remplissage...", systemImage: "hourglass")
+                        .foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    Spacer()
+                }
             }
+            .padding(14)
         }
     }
 
-    private func legend(_ tl: TimelineData) -> some View {
-        HStack(spacing: 16) {
-            legendItem(.blue, "CPU agrege", tl.cpu.last.map { "\(Int($0.v)) %" })
-            legendItem(.orange, "Temp batterie", tl.temp.last.map { String(format: "%.1f C", $0.v) })
-            legendItem(.green, "Reseau", tl.net.last.map { formatRate(Int($0.v)) })
-            Spacer()
-        }
-        .font(.caption)
-    }
-
-    private func legendItem(_ color: Color, _ name: String, _ value: String?) -> some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 14, height: 3)
-            Text(name).foregroundStyle(.secondary)
-            Text(value ?? "n/d").monospacedDigit()
-        }
-    }
-
-    private func draw(_ ctx: GraphicsContext, _ size: CGSize, _ tl: TimelineData) {
-        let W = size.width, H = size.height
-        let padB: CGFloat = 14, padT: CGFloat = 8
-        let plotH = H - padB - padT
-        let span = max(1, tl.until - tl.since)
-        func x(_ t: Double) -> CGFloat { CGFloat((t - tl.since) / span) * W }
-
-        // Bandes d'indexation en fond.
-        for i in tl.indexing.indices where tl.indexing[i].state == "indexing" {
-            let x0 = x(tl.indexing[i].t)
-            let x1 = i + 1 < tl.indexing.count ? x(tl.indexing[i + 1].t) : W
-            let rect = CGRect(x: x0, y: padT, width: max(1, x1 - x0), height: plotH)
-            ctx.fill(Path(rect), with: .color(.yellow.opacity(0.10)))
-        }
-
-        func line(_ pts: [TimelinePoint], _ color: Color) {
-            guard pts.count >= 2 else { return }
-            let vs = pts.map(\.v)
-            let mn = vs.min()!, mx = Swift.max(vs.max()!, mn + 0.0001)
-            var path = Path()
-            for (i, p) in pts.enumerated() {
-                let px = x(p.t)
-                let py = padT + plotH - CGFloat((p.v - mn) / (mx - mn)) * plotH
-                if i == 0 { path.move(to: CGPoint(x: px, y: py)) }
-                else { path.addLine(to: CGPoint(x: px, y: py)) }
+    private func series(_ title: String, _ pts: [TimelinePoint], _ color: Color,
+                        _ fmt: @escaping (Double) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(pts.last.map { fmt($0.v) } ?? "n/d")
+                    .font(.caption.weight(.semibold)).foregroundStyle(color).monospacedDigit()
             }
-            ctx.stroke(path, with: .color(color), lineWidth: 1.6)
-        }
-        line(tl.net, .green)
-        line(tl.temp, .orange)
-        line(tl.cpu, .blue)
-
-        for t in tl.errors {
-            let xx = x(t)
-            ctx.fill(Path(CGRect(x: xx, y: H - padB + 2, width: 1.5, height: 6)), with: .color(.red))
+            Chart {
+                ForEach(pts.indices, id: \.self) { i in
+                    let d = Date(timeIntervalSince1970: pts[i].t)
+                    AreaMark(x: .value("t", d), y: .value("v", pts[i].v))
+                        .foregroundStyle(LinearGradient(colors: [color.opacity(0.30), color.opacity(0.02)],
+                                                        startPoint: .top, endPoint: .bottom))
+                        .interpolationMethod(.catmullRom)
+                    LineMark(x: .value("t", d), y: .value("v", pts[i].v))
+                        .foregroundStyle(color).interpolationMethod(.catmullRom)
+                }
+            }
+            .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) }
+            .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+            .frame(height: 72)
         }
     }
 }
+
+// MARK: - Network tab
 
 struct NetworkTab: View {
     @EnvironmentObject var client: CollectorClient
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(client.netSummary).font(.caption).foregroundStyle(.secondary)
-            Table(client.connections) {
-                TableColumn("PID") { c in Text(c.pid >= 0 ? "\(c.pid)" : "systeme").monospacedDigit() }
-                    .width(min: 60, ideal: 70)
-                TableColumn("Distant") { c in Text(c.remote).font(.system(.body, design: .monospaced)) }
-                TableColumn("Iface") { c in Text(c.iface) }.width(min: 70, ideal: 80)
-                TableColumn("Down") { c in Text(formatRate(c.rxRate)).monospacedDigit() }.width(min: 80)
-                TableColumn("Up") { c in Text(formatRate(c.txRate)).monospacedDigit() }.width(min: 80)
-                TableColumn("RTT") { c in Text(c.rttMs.map { String(format: "%.0f ms", $0) } ?? "-").monospacedDigit() }
-                    .width(min: 70)
-                TableColumn("Total") { c in Text(formatBytes(c.total)).monospacedDigit() }.width(min: 80)
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(client.netSummary).font(.caption).foregroundStyle(.secondary)
+                Table(client.connections) {
+                    TableColumn("Process") { c in
+                        Text(c.pid >= 0 ? "\(c.pid)" : "systeme").monospacedDigit().foregroundStyle(.secondary)
+                    }.width(min: 60, ideal: 70)
+                    TableColumn("Distant") { c in Text(c.remote).font(.system(.body, design: .monospaced)) }
+                    TableColumn("Iface") { c in
+                        Text(c.iface).padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(.white.opacity(0.06), in: Capsule()).font(.caption)
+                    }.width(min: 74, ideal: 84)
+                    TableColumn("Down") { c in Label(formatRate(c.rxRate), systemImage: "arrow.down").labelStyle(.titleOnly).monospacedDigit() }.width(min: 80)
+                    TableColumn("Up") { c in Text(formatRate(c.txRate)).monospacedDigit() }.width(min: 80)
+                    TableColumn("RTT") { c in Text(c.rttMs.map { String(format: "%.0f ms", $0) } ?? "-").monospacedDigit().foregroundStyle(.secondary) }.width(min: 66)
+                    TableColumn("Total") { c in Text(formatBytes(c.total)).monospacedDigit() }.width(min: 80)
+                }
+                .tableStyle(.inset(alternatesRowBackgrounds: true))
+            }
+            .padding(12)
+        }
+    }
+}
+
+// MARK: - Logs tab
+
+struct LogsTab: View {
+    @EnvironmentObject var client: CollectorClient
+    var body: some View {
+        Card {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(client.logs) { line in
+                            let isErr = line.level == "Error" || line.level == "Fault"
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(line.time).foregroundStyle(.tertiary)
+                                Text(line.process).foregroundStyle(Color.accentBlue)
+                                Text(line.message)
+                                    .foregroundStyle(isErr ? Color.errRed : .secondary)
+                            }
+                            .font(.system(.caption, design: .monospaced))
+                            .id(line.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                }
+                .onChange(of: client.logs.count) { _, _ in
+                    if let last = client.logs.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
             }
         }
     }
 }
 
-struct LogsTab: View {
+// MARK: - Waiting
+
+struct WaitingView: View {
     @EnvironmentObject var client: CollectorClient
 
+    private var message: String {
+        if let e = client.lastError, !e.isEmpty { return e }
+        switch client.state {
+        case "lancement du collector": return "Demarrage du collector..."
+        case "connecting", "connexion", "connected": return "Connexion a l'iPhone..."
+        default: return "Branche ton iPhone en USB et deverrouille-le."
+        }
+    }
+
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(client.logs) { line in
-                        HStack(alignment: .top, spacing: 6) {
-                            Text(line.time).foregroundStyle(.tertiary)
-                            Text(line.process).foregroundStyle(.tint)
-                            Text(line.message)
-                                .foregroundStyle(line.level == "Error" || line.level == "Fault" ? .red : .secondary)
-                        }
-                        .font(.system(.caption, design: .monospaced))
-                        .id(line.id)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+        VStack(spacing: 18) {
+            ZStack {
+                Circle().fill(Color.accentBlue.opacity(0.12)).frame(width: 110, height: 110)
+                Image(systemName: "iphone.gen3").font(.system(size: 50)).foregroundStyle(Color.accentBlue)
             }
-            .onChange(of: client.logs.count) { _, _ in
-                if let last = client.logs.last { proxy.scrollTo(last.id, anchor: .bottom) }
+            Text("En attente de l'iPhone").font(.title2.weight(.semibold))
+            Text(message)
+                .font(.callout).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).frame(maxWidth: 480)
+            ProgressView().controlSize(.small)
+            VStack(alignment: .leading, spacing: 8) {
+                checkItem("Branche l'iPhone en USB")
+                checkItem("Deverrouille-le")
+                checkItem("Mode developpeur actif (Reglages > Confidentialite et securite)")
             }
+            .font(.callout).foregroundStyle(.secondary)
+            .padding(16)
+            .background(.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func checkItem(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "circle.dotted").foregroundStyle(Color.accentBlue.opacity(0.7))
+            Text(text)
         }
     }
 }
