@@ -75,3 +75,60 @@ struct LogLine: Identifiable {
     let level: String
     let message: String
 }
+
+struct TimelinePoint {
+    let t: Double
+    let v: Double
+}
+
+struct TimelineData {
+    let since: Double
+    let until: Double
+    let minutes: Double
+    let totalRows: Int
+    let cpu: [TimelinePoint]
+    let temp: [TimelinePoint]
+    let net: [TimelinePoint]
+    let indexing: [(t: Double, state: String)]
+    let errors: [Double]
+
+    init?(_ o: [String: Any]) {
+        guard (o["available"] as? Bool) == true,
+              let s = o["series"] as? [String: Any] else { return nil }
+
+        func series(_ key: String) -> [TimelinePoint] {
+            guard let arr = s[key] as? [Any] else { return [] }
+            return arr.compactMap { row in
+                guard let p = row as? [Any], p.count >= 2,
+                      let t = (p[0] as? NSNumber)?.doubleValue,
+                      let v = (p[1] as? NSNumber)?.doubleValue else { return nil }
+                return TimelinePoint(t: t, v: v)
+            }
+        }
+
+        let rx = series("net_rx_rate"), tx = series("net_tx_rate")
+        var netPts: [TimelinePoint] = []
+        for i in 0..<min(rx.count, tx.count) {
+            netPts.append(TimelinePoint(t: rx[i].t, v: rx[i].v + tx[i].v))
+        }
+
+        since = (o["since"] as? NSNumber)?.doubleValue ?? 0
+        until = (o["until"] as? NSNumber)?.doubleValue ?? 0
+        minutes = (o["minutes"] as? NSNumber)?.doubleValue ?? 10
+        totalRows = (o["total_rows"] as? NSNumber)?.intValue ?? 0
+        cpu = series("cpu_aggregate")
+        temp = series("battery_temp_c")
+        net = netPts
+        indexing = (o["indexing"] as? [Any] ?? []).compactMap { row in
+            guard let e = row as? [Any], e.count >= 2,
+                  let t = (e[0] as? NSNumber)?.doubleValue,
+                  let st = e[1] as? String else { return nil }
+            return (t, st)
+        }
+        errors = (o["errors"] as? [Any] ?? []).compactMap { row in
+            guard let e = row as? [Any], e.count >= 1,
+                  let t = (e[0] as? NSNumber)?.doubleValue else { return nil }
+            return t
+        }
+    }
+}

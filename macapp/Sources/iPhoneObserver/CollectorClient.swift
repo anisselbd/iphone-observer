@@ -17,6 +17,7 @@ final class CollectorClient: ObservableObject {
     @Published var logs: [LogLine] = []
     @Published var sidecarManaged: Bool = false
     @Published var lastError: String?
+    @Published var timeline: TimelineData?
 
     // Vrai des qu'on a recu au moins un tick: l'app peut afficher le dashboard.
     var hasData: Bool { totals != nil }
@@ -52,6 +53,19 @@ final class CollectorClient: ObservableObject {
         guard !running else { return }
         running = true
         Task { await ensureCollectorAndConnect() }
+        Task { await pollTimeline() }
+    }
+
+    private func pollTimeline() async {
+        guard let url = URL(string: "http://\(host):\(port)/api/timeline?minutes=10") else { return }
+        while running {
+            if let (data, _) = try? await session.data(from: url),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let td = TimelineData(obj) {
+                timeline = td
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
     }
 
     func stop() {

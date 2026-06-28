@@ -113,6 +113,7 @@ struct DashboardView: View {
             batteryRow
             TabView {
                 ProcessTab().tabItem { Text("Process") }
+                TimelineNativeView().tabItem { Text("Timeline") }
                 NetworkTab().tabItem { Text("Reseau") }
                 LogsTab().tabItem { Text("Logs") }
             }
@@ -182,26 +183,119 @@ struct DashboardView: View {
 
 struct ProcessTab: View {
     @EnvironmentObject var client: CollectorClient
+    @State private var sortOrder = [KeyPathComparator(\ProcessRow.cpu, order: .reverse)]
+    @State private var query = ""
+
+    private var rows: [ProcessRow] {
+        let base = query.isEmpty
+            ? client.processes
+            : client.processes.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        return base.sorted(using: sortOrder)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let t = client.totals {
-                Text("\(t.processCount) process, CPU agrege \(Int(t.aggregateCpu)) %, RAM \(String(format: "%.0f", t.rssMbTotal)) Mo, top \(t.topName) (\(String(format: "%.0f", t.topCpu)) %)")
-                    .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                if let t = client.totals {
+                    Text("\(t.processCount) process, CPU agrege \(Int(t.aggregateCpu)) %, RAM \(String(format: "%.0f", t.rssMbTotal)) Mo, top \(t.topName) (\(String(format: "%.0f", t.topCpu)) %)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                TextField("Filtrer", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 200)
             }
-            // Triee par CPU desc cote client. Pas de tri interactif live: evite la
-            // re-entrance du NSTableView avec un flux qui change chaque seconde.
-            Table(client.processes) {
-                TableColumn("PID") { Text("\($0.pid)").monospacedDigit() }
+            // Tri interactif par colonne (defaut: CPU desc).
+            Table(rows, sortOrder: $sortOrder) {
+                TableColumn("PID", value: \.pid) { Text("\($0.pid)").monospacedDigit() }
                     .width(min: 60, ideal: 70)
-                TableColumn("Process") { Text($0.name) }
-                TableColumn("CPU %") { Text(String(format: "%.1f", $0.cpu)).monospacedDigit() }
+                TableColumn("Process", value: \.name) { Text($0.name) }
+                TableColumn("CPU %", value: \.cpu) { Text(String(format: "%.1f", $0.cpu)).monospacedDigit() }
                     .width(min: 70, ideal: 80)
-                TableColumn("RAM (Mo)") { Text(String(format: "%.1f", $0.rssMb)).monospacedDigit() }
+                TableColumn("RAM (Mo)", value: \.rssMb) { Text(String(format: "%.1f", $0.rssMb)).monospacedDigit() }
                     .width(min: 80, ideal: 90)
-                TableColumn("Threads") { Text("\($0.threads)").monospacedDigit() }
+                TableColumn("Threads", value: \.threads) { Text("\($0.threads)").monospacedDigit() }
                     .width(min: 70, ideal: 80)
             }
+        }
+    }
+}
+
+struct TimelineNativeView: View {
+    @EnvironmentObject var client: CollectorClient
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let tl = client.timeline,
+               !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
+                legend(tl)
+                Canvas { ctx, size in draw(ctx, size, tl) }
+                    .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+                Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            } else {
+                Spacer()
+                Text("Timeline en cours de remplissage...")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            }
+        }
+    }
+
+    private func legend(_ tl: TimelineData) -> some View {
+        HStack(spacing: 16) {
+            legendItem(.blue, "CPU agrege", tl.cpu.last.map { "\(Int($0.v)) %" })
+            legendItem(.orange, "Temp batterie", tl.temp.last.map { String(format: "%.1f C", $0.v) })
+            legendItem(.green, "Reseau", tl.net.last.map { formatRate(Int($0.v)) })
+            Spacer()
+        }
+        .font(.caption)
+    }
+
+    private func legendItem(_ color: Color, _ name: String, _ value: String?) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 14, height: 3)
+            Text(name).foregroundStyle(.secondary)
+            Text(value ?? "n/d").monospacedDigit()
+        }
+    }
+
+    private func draw(_ ctx: GraphicsContext, _ size: CGSize, _ tl: TimelineData) {
+        let W = size.width, H = size.height
+        let padB: CGFloat = 14, padT: CGFloat = 8
+        let plotH = H - padB - padT
+        let span = max(1, tl.until - tl.since)
+        func x(_ t: Double) -> CGFloat { CGFloat((t - tl.since) / span) * W }
+
+        // Bandes d'indexation en fond.
+        for i in tl.indexing.indices where tl.indexing[i].state == "indexing" {
+            let x0 = x(tl.indexing[i].t)
+            let x1 = i + 1 < tl.indexing.count ? x(tl.indexing[i + 1].t) : W
+            let rect = CGRect(x: x0, y: padT, width: max(1, x1 - x0), height: plotH)
+            ctx.fill(Path(rect), with: .color(.yellow.opacity(0.10)))
+        }
+
+        func line(_ pts: [TimelinePoint], _ color: Color) {
+            guard pts.count >= 2 else { return }
+            let vs = pts.map(\.v)
+            let mn = vs.min()!, mx = Swift.max(vs.max()!, mn + 0.0001)
+            var path = Path()
+            for (i, p) in pts.enumerated() {
+                let px = x(p.t)
+                let py = padT + plotH - CGFloat((p.v - mn) / (mx - mn)) * plotH
+                if i == 0 { path.move(to: CGPoint(x: px, y: py)) }
+                else { path.addLine(to: CGPoint(x: px, y: py)) }
+            }
+            ctx.stroke(path, with: .color(color), lineWidth: 1.6)
+        }
+        line(tl.net, .green)
+        line(tl.temp, .orange)
+        line(tl.cpu, .blue)
+
+        for t in tl.errors {
+            let xx = x(t)
+            ctx.fill(Path(CGRect(x: xx, y: H - padB + 2, width: 1.5, height: 6)), with: .color(.red))
         }
     }
 }
