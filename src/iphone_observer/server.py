@@ -21,8 +21,12 @@ from .collector import Collector
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def make_app(udid: Optional[str] = None, interval_ms: int = 1000) -> FastAPI:
-    collector = Collector(udid=udid, interval_ms=interval_ms)
+def make_app(
+    udid: Optional[str] = None,
+    interval_ms: int = 1000,
+    db_path: Optional[str] = "data/iphone-observer.sqlite",
+) -> FastAPI:
+    collector = Collector(udid=udid, interval_ms=interval_ms, db_path=db_path)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -46,6 +50,12 @@ def make_app(udid: Optional[str] = None, interval_ms: int = 1000) -> FastAPI:
             "udid": collector.udid or "",
             "events": collector.bus.snapshot(),
         }
+
+    @app.get("/api/timeline")
+    async def timeline(minutes: float = 10.0) -> dict:
+        if collector.storage is None:
+            return {"available": False, "reason": "storage desactive"}
+        return await collector.storage.timeline(minutes=minutes)
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

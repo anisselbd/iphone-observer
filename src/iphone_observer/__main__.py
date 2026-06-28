@@ -57,6 +57,13 @@ def main() -> int:
     )
     p_serve.add_argument("--host", default="127.0.0.1", help="Bind host (defaut: 127.0.0.1).")
     p_serve.add_argument("--port", type=int, default=8765, help="Bind port (defaut: 8765).")
+    p_serve.add_argument(
+        "--db", default="data/iphone-observer.sqlite",
+        help="Fichier SQLite pour l'historique (defaut: data/iphone-observer.sqlite).",
+    )
+    p_serve.add_argument(
+        "--no-store", action="store_true", help="Desactive la persistance SQLite."
+    )
 
     p_cap = sub.add_parser(
         "capture", help="Sniffe le trafic brut vers un fichier .pcap (pcapng)."
@@ -153,9 +160,11 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     from .server import make_app
 
-    app = make_app(udid=args.udid, interval_ms=args.interval)
+    db_path = None if args.no_store else args.db
+    app = make_app(udid=args.udid, interval_ms=args.interval, db_path=db_path)
     url = f"http://{args.host}:{args.port}"
-    print(f"Collector + dashboard: {url}", file=sys.stderr)
+    store_msg = "off" if db_path is None else db_path
+    print(f"Collector + dashboard: {url} (storage: {store_msg})", file=sys.stderr)
     print("Le tunnel et sysmontap demarrent au premier chargement. Ctrl-C pour arreter.",
           file=sys.stderr)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

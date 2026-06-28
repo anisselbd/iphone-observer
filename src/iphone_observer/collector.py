@@ -18,6 +18,7 @@ from .analyzers import indexing
 from .device import discover_device
 from .events import SOURCE_COLLECTOR, EventBus
 from .sources import diagnostics, networking, syslog, sysmontap
+from .storage import Storage
 from .tunnel import TunnelError, UserspaceTunnel
 
 # Une source: coroutine run(rsd, bus, **opts). On la relance a chaque tunnel.
@@ -30,12 +31,14 @@ class Collector:
         udid: Optional[str] = None,
         interval_ms: int = 1000,
         battery_interval_s: float = 10.0,
+        db_path: Optional[str] = "data/iphone-observer.sqlite",
     ) -> None:
         self.udid = udid
         self.interval_ms = interval_ms
         self.battery_interval_s = battery_interval_s
         self.bus = EventBus(udid=udid or "")
         self.state = "starting"
+        self.storage: Optional[Storage] = Storage(db_path) if db_path else None
         self._tunnel = UserspaceTunnel(udid)
         self._task: Optional[asyncio.Task] = None
         self._analyzer_tasks: list[asyncio.Task] = []
@@ -45,10 +48,15 @@ class Collector:
 
     async def start(self) -> None:
         self._stop.clear()
-        # Analyzers: taches longues, abonnees au bus, independantes du tunnel.
+        # Taches longues, abonnees au bus, independantes du tunnel.
         self._analyzer_tasks = [
             asyncio.create_task(indexing.run(self.bus), name="analyzer:indexing"),
         ]
+        if self.storage is not None:
+            await self.storage.open()
+            self._analyzer_tasks.append(
+                asyncio.create_task(self.storage.run(self.bus), name="storage")
+            )
         self._task = asyncio.create_task(self._run(), name="collector")
 
     async def stop(self) -> None:
@@ -65,6 +73,8 @@ class Collector:
         if self._analyzer_tasks:
             await asyncio.gather(*self._analyzer_tasks, return_exceptions=True)
             self._analyzer_tasks = []
+        if self.storage is not None:
+            await self.storage.close()
         await self._tunnel.close()
         self._set_state("stopped")
 

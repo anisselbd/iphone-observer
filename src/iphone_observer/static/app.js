@@ -29,6 +29,9 @@ const els = {
   syslog: document.getElementById("syslog"),
   netTotals: document.getElementById("net-totals"),
   netRows: document.getElementById("net-rows"),
+  tlCanvas: document.getElementById("tl-canvas"),
+  tlLegend: document.getElementById("tl-legend"),
+  tlMeta: document.getElementById("tl-meta"),
 };
 
 let lastBatteryAt = 0;
@@ -266,6 +269,116 @@ setInterval(() => {
   if (lastTickAt) els.tAge.textContent = ageLabel(lastTickAt);
   if (lastBatteryAt) els.bAge.textContent = "(" + ageLabel(lastBatteryAt) + ")";
 }, 500);
+
+// --- Timeline unifiee (canvas, sans lib externe) ---
+const TL_SERIES = [
+  { key: "cpu_aggregate", label: "CPU agrege", color: "#4ea1ff", fmt: (v) => v.toFixed(0) + " %" },
+  { key: "battery_temp_c", label: "Temp batterie", color: "#fbbd23", fmt: (v) => v.toFixed(1) + " C" },
+  { key: "net_total", label: "Reseau", color: "#36d399", fmt: (v) => fmtRate(v) },
+];
+
+function buildNetTotal(series) {
+  const rx = series.net_rx_rate || [], tx = series.net_tx_rate || [];
+  const out = [];
+  for (let i = 0; i < rx.length; i++) {
+    const txv = tx[i] && tx[i][0] === rx[i][0] ? tx[i][1] : 0;
+    out.push([rx[i][0], rx[i][1] + txv]);
+  }
+  return out;
+}
+
+function drawTimeline(data) {
+  const canvas = els.tlCanvas, ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (!data.available) {
+    els.tlMeta.textContent = "(storage desactive)";
+    return;
+  }
+  const since = data.since, span = Math.max(1, data.until - since);
+  const padB = 18, padT = 6, plotH = H - padB - padT;
+  const xOf = (t) => ((t - since) / span) * W;
+
+  // Bandes d'indexation en fond
+  const idx = data.indexing || [];
+  for (let i = 0; i < idx.length; i++) {
+    if (idx[i][1] === "indexing") {
+      const x0 = xOf(idx[i][0]);
+      const x1 = i + 1 < idx.length ? xOf(idx[i + 1][0]) : W;
+      ctx.fillStyle = "rgba(251,189,35,0.08)";
+      ctx.fillRect(x0, padT, Math.max(1, x1 - x0), plotH);
+    }
+  }
+
+  // Series (chacune normalisee sur sa propre echelle)
+  const series = { ...data.series, net_total: buildNetTotal(data.series) };
+  const legend = [];
+  for (const def of TL_SERIES) {
+    const pts = series[def.key] || [];
+    if (pts.length < 2) {
+      legend.push({ def, last: null });
+      continue;
+    }
+    let mn = Infinity, mx = -Infinity;
+    for (const p of pts) {
+      if (p[1] < mn) mn = p[1];
+      if (p[1] > mx) mx = p[1];
+    }
+    if (mx === mn) mx = mn + 1;
+    ctx.beginPath();
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 1.5;
+    pts.forEach((p, i) => {
+      const x = xOf(p[0]);
+      const y = padT + plotH - ((p[1] - mn) / (mx - mn)) * plotH;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    legend.push({ def, last: pts[pts.length - 1][1] });
+  }
+
+  // Marqueurs d'erreurs syslog en bas
+  ctx.fillStyle = "#f87272";
+  for (const e of data.errors || []) {
+    ctx.fillRect(xOf(e[0]), H - padB + 2, 1.5, 6);
+  }
+
+  // Axe temps
+  ctx.fillStyle = "#5a6273";
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.fillText(`-${Math.round(data.minutes)} min`, 2, H - 4);
+  ctx.textAlign = "right";
+  ctx.fillText("maintenant", W - 2, H - 4);
+  ctx.textAlign = "left";
+
+  els.tlLegend.replaceChildren(
+    ...legend.map((l) => {
+      const d = document.createElement("div");
+      d.className = "item";
+      const val = l.last == null ? "n/d" : l.def.fmt(l.last);
+      d.innerHTML =
+        `<span class="swatch" style="background:${l.def.color}"></span>` +
+        `<span class="name">${l.def.label}</span> <span class="val">${val}</span>`;
+      return d;
+    })
+  );
+  els.tlMeta.textContent = `(${Math.round(data.minutes)} min, ${data.total_rows} events stockes)`;
+}
+
+async function fetchTimeline() {
+  try {
+    const r = await fetch("/api/timeline?minutes=10");
+    drawTimeline(await r.json());
+  } catch (e) {
+    /* le serveur n'est peut-etre pas encore pret */
+  }
+}
+setInterval(fetchTimeline, 5000);
+fetchTimeline();
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";

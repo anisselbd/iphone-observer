@@ -43,7 +43,20 @@ uv run iphone-observer serve --interval 500 --port 8765
 
 # Capture pcap brute (voir limite ci-dessous)
 uv run iphone-observer capture -o capture.pcapng --count 500
+
+# Storage: actif par defaut (data/iphone-observer.sqlite). Pour le couper:
+uv run iphone-observer serve --no-store
+uv run iphone-observer serve --db /chemin/vers/historique.sqlite
 ```
+
+## Storage et timeline
+
+Tout event est persiste dans SQLite (table `events(seq, ts, source, type, udid,
+data)`, WAL, index sur ts). Les gros payloads (sysmontap, networking) sont
+stockes en version compacte (totaux + top 20) pour borner la croissance; le flux
+live reste complet. La timeline unifiee (`/api/timeline?minutes=10`) superpose
+sur un meme axe temps: CPU agrege, temperature batterie, debit reseau, bandes
+d'indexation et marqueurs d'erreurs syslog.
 
 ## Limites connues (iOS 26)
 
@@ -74,7 +87,7 @@ Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 - [x] Phase 3: batterie / diagnostics (temperature, voltage, amperage, cycles, sante, chargeur)
 - [x] Phase 4: syslog (filtre + rate-limite) + detecteur d'indexation (CPU des daemons, hysteresis)
 - [x] Phase 5: reseau (channel networking live; pcap gate par iOS 26, voir limites)
-- [ ] Phase 6: storage + timeline unifiee
+- [x] Phase 6: storage SQLite + timeline unifiee (CPU + temp batterie + reseau + indexation + erreurs)
 - [ ] Phase 7: shell natif
 
 ## Convention
