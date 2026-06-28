@@ -211,16 +211,21 @@ struct BatteryCard: View {
 struct CpuCard: View {
     @EnvironmentObject var client: CollectorClient
     var body: some View {
-        Card {
+        let raw = client.totals?.aggregateCpu ?? 0
+        let cores = Double(max(1, client.cpuCores))
+        let util = Swift.min(100, raw / cores)
+        let sparkPts = (client.timeline?.cpu ?? []).map { TimelinePoint(t: $0.t, v: $0.v / cores) }
+        return Card {
             VStack(alignment: .leading, spacing: 6) {
-                Label("CPU agrege", systemImage: "cpu").font(.caption).foregroundStyle(.secondary)
+                Label("CPU utilisation", systemImage: "cpu").font(.caption).foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(Int(client.totals?.aggregateCpu ?? 0))")
+                    Text("\(Int(util))")
                         .font(.system(size: 30, weight: .semibold, design: .rounded))
                     Text("%").foregroundStyle(.secondary)
                 }
-                Sparkline(points: client.timeline?.cpu ?? [], color: .accentBlue)
-                    .frame(height: 30)
+                Sparkline(points: sparkPts, color: .accentBlue).frame(height: 28)
+                Text("\(Int(raw)) % cumule sur \(client.cpuCores) coeurs")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if let t = client.totals {
                     Text("top \(t.topName) (\(Int(t.topCpu)) %)")
                         .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
@@ -352,7 +357,9 @@ struct TimelineTab: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let tl = client.timeline,
                    !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
-                    series("CPU agrege", tl.cpu, .accentBlue) { "\(Int($0)) %" }
+                    let cores = Double(max(1, client.cpuCores))
+                    series("CPU utilisation (\(client.cpuCores) coeurs)",
+                           tl.cpu.map { TimelinePoint(t: $0.t, v: $0.v / cores) }, .accentBlue) { "\(Int($0)) %" }
                     series("Temperature batterie", tl.temp, .warnYellow) { String(format: "%.1f C", $0) }
                     series("Debit reseau", tl.net, .okGreen) { formatRate(Int($0)) }
                     Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")

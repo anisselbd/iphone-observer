@@ -43,6 +43,8 @@ class Collector:
         self._task: Optional[asyncio.Task] = None
         self._analyzer_tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
+        self._cpu_cores: Optional[int] = None
+        self._device_data: dict = {}
 
     # --- cycle de vie ---------------------------------------------------------
 
@@ -99,13 +101,35 @@ class Collector:
         if not self.udid:
             self.udid = target.udid
         self.bus.udid = target.udid
-        self.bus.emit(SOURCE_COLLECTOR, "device", {
+        self._device_data = {
             "udid": target.udid,
             "name": target.name,
             "model": target.product_type,
             "ios": target.product_version,
             "transport": target.transport,
-        })
+        }
+        self.bus.emit(SOURCE_COLLECTOR, "device", dict(self._device_data))
+
+    async def _fetch_hardware(self, rsd) -> None:
+        """Recupere le nombre de coeurs CPU (une fois) et re-emet l'identite
+        enrichie. Best-effort: le dashboard a un defaut si ca echoue."""
+        from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
+        from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+
+        try:
+            async with DvtProvider(rsd) as dvt:
+                async with DeviceInfo(dvt) as di:
+                    hw = await di.hardware_information()
+            cores = hw.get("numberOfCpus")
+            if isinstance(cores, int) and cores > 0:
+                self._cpu_cores = cores
+                if self._device_data:
+                    self.bus.emit(
+                        SOURCE_COLLECTOR, "device",
+                        {**self._device_data, "cpu_cores": cores},
+                    )
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _run(self) -> None:
         await self._resolve_identity()
@@ -116,6 +140,8 @@ class Collector:
                 rsd = await self._tunnel.open()
                 self._set_state("connected")
                 backoff = 1.0
+                if self._cpu_cores is None:
+                    await self._fetch_hardware(rsd)
                 await self._run_sources(rsd)
             except asyncio.CancelledError:
                 raise

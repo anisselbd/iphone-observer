@@ -18,6 +18,7 @@ final class CollectorClient: ObservableObject {
     @Published var sidecarManaged: Bool = false
     @Published var lastError: String?
     @Published var timeline: TimelineData?
+    @Published var cpuCores: Int = 6
 
     // Vrai des qu'on a recu au moins un tick: l'app peut afficher le dashboard.
     var hasData: Bool { totals != nil }
@@ -306,6 +307,7 @@ final class CollectorClient: ObservableObject {
         let ios = d["ios"] as? String ?? ""
         let transport = d["transport"] as? String ?? ""
         device = "\(name) (\(model), iOS \(ios), \(transport))"
+        if let cores = numI(d["cpu_cores"]), cores > 0 { cpuCores = cores }
     }
 
     // MARK: - Helpers
