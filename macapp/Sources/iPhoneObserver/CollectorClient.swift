@@ -20,6 +20,7 @@ final class CollectorClient: ObservableObject {
     @Published var timeline: TimelineData?
     @Published var cpuCores: Int = 6
     @Published var memory: Memory?
+    @Published var systemStats: SystemStats?
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -219,7 +220,23 @@ final class CollectorClient: ObservableObject {
                 totalMb: total,
                 usedMb: numI(m["used_mb"]) ?? 0,
                 freeMb: numI(m["free_mb"]) ?? 0,
-                compressedMb: numI(m["compressed_mb"]) ?? 0
+                compressedMb: numI(m["compressed_mb"]) ?? 0,
+                swapMb: numI(m["swap_mb"])
+            )
+        }
+        if let sys = d["system"] as? [String: Any] {
+            let disk = sys["disk"] as? [String: Any]
+            let net = sys["net"] as? [String: Any]
+            systemStats = SystemStats(
+                threads: numI(sys["threads"]),
+                diskReadBps: numI(disk?["read_bps"]),
+                diskWriteBps: numI(disk?["write_bps"]),
+                diskReadOps: numI(disk?["read_ops_ps"]),
+                diskWriteOps: numI(disk?["write_ops_ps"]),
+                netInBps: numI(net?["in_bps"]),
+                netOutBps: numI(net?["out_bps"]),
+                netInPps: numI(net?["in_pps"]),
+                netOutPps: numI(net?["out_pps"])
             )
         }
         let raw = d["processes"] as? [[String: Any]] ?? []

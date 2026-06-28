@@ -41,6 +41,7 @@ struct DashboardView: View {
             HeaderBar()
             IndexingBanner()
             HeroRow()
+            SystemStrip()
             TabView {
                 ProcessTab().tabItem { Label("Process", systemImage: "cpu") }
                 TimelineTab().tabItem { Label("Timeline", systemImage: "chart.xyaxis.line") }
@@ -276,6 +277,69 @@ struct RamCard: View {
     }
 }
 
+// MARK: - Bandeau systeme (disque, reseau global, swap, threads)
+
+struct SystemStrip: View {
+    @EnvironmentObject var client: CollectorClient
+    private var s: SystemStats? { client.systemStats }
+
+    var body: some View {
+        Card {
+            HStack(spacing: 14) {
+                dual(icon: "internaldrive", title: "Disque",
+                     down: s?.diskReadBps, up: s?.diskWriteBps, color: .accentBlue, help: nil)
+                sep()
+                dual(icon: "network", title: "Reseau global",
+                     down: s?.netInBps, up: s?.netOutBps, color: .okGreen,
+                     help: "Trafic systeme total de l'iPhone. Inclut le lien USB de l'observateur (tunnel), donc superieur au trafic reseau reel.")
+                sep()
+                single(icon: "arrow.up.arrow.down.circle", title: "Swap",
+                       value: client.memory?.swapMb.map { "\($0) Mo" }, color: .warnYellow)
+                sep()
+                single(icon: "square.stack.3d.up.fill", title: "Threads",
+                       value: s?.threads.map { "\($0)" }, color: .accentBlue)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 11).padding(.horizontal, 16)
+        }
+    }
+
+    private func sep() -> some View {
+        Rectangle().fill(.white.opacity(0.08)).frame(width: 1, height: 30)
+    }
+
+    private func dual(icon: String, title: String, down: Int?, up: Int?,
+                      color: Color, help: String?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.caption2).foregroundStyle(color)
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                if let help {
+                    Image(systemName: "info.circle").font(.system(size: 9))
+                        .foregroundStyle(.tertiary).help(help)
+                }
+            }
+            HStack(spacing: 10) {
+                Label(down.map { formatRate($0) } ?? "n/d", systemImage: "arrow.down")
+                    .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(.primary)
+                Label(up.map { formatRate($0) } ?? "n/d", systemImage: "arrow.up")
+                    .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(.primary)
+            }
+            .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private func single(icon: String, title: String, value: String?, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.caption2).foregroundStyle(color)
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+            }
+            Text(value ?? "n/d").font(.callout.weight(.semibold)).monospacedDigit()
+        }
+    }
+}
+
 struct Sparkline: View {
     let points: [TimelinePoint]
     let color: Color
@@ -383,24 +447,36 @@ struct TimelineTab: View {
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 10) {
-                if let tl = client.timeline,
-                   !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
-                    let cores = Double(max(1, client.cpuCores))
-                    series("CPU utilisation (\(client.cpuCores) coeurs)",
-                           tl.cpu.map { TimelinePoint(t: $0.t, v: $0.v / cores) }, .accentBlue) { "\(Int($0)) %" }
-                    series("Temperature batterie", tl.temp, .warnYellow) { String(format: "%.1f C", $0) }
-                    series("Debit reseau", tl.net, .okGreen) { formatRate(Int($0)) }
-                    Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                } else {
+            if let tl = client.timeline,
+               !(tl.cpu.isEmpty && tl.temp.isEmpty && tl.net.isEmpty) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        let cores = Double(max(1, client.cpuCores))
+                        series("CPU utilisation (\(client.cpuCores) coeurs)",
+                               tl.cpu.map { TimelinePoint(t: $0.t, v: $0.v / cores) }, .accentBlue) { "\(Int($0)) %" }
+                        series("Temperature batterie", tl.temp, .warnYellow) { String(format: "%.1f C", $0) }
+                        series("Debit reseau (connexions)", tl.net, .okGreen) { formatRate(Int($0)) }
+                        if !tl.diskRead.isEmpty || !tl.diskWrite.isEmpty {
+                            series("Disque lecture", tl.diskRead, .accentBlue) { formatRate(Int($0)) }
+                            series("Disque ecriture", tl.diskWrite, Color(red: 0.78, green: 0.55, blue: 1.0)) { formatRate(Int($0)) }
+                        }
+                        if !tl.swap.isEmpty {
+                            series("Swap", tl.swap, .warnYellow) { "\(Int($0)) Mo" }
+                        }
+                        Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .padding(14)
+                }
+            } else {
+                VStack {
                     Spacer()
                     Label("Timeline en cours de remplissage...", systemImage: "hourglass")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity)
                     Spacer()
                 }
+                .padding(14)
             }
-            .padding(14)
         }
     }
 

@@ -81,9 +81,24 @@ struct Memory {
     let usedMb: Int
     let freeMb: Int
     let compressedMb: Int
+    let swapMb: Int?
     var totalGo: Double { Double(totalMb) / 1000 }
     var usedGo: Double { Double(usedMb) / 1000 }
     var fraction: Double { totalMb > 0 ? Double(usedMb) / Double(totalMb) : 0 }
+}
+
+// Metriques systeme etendues issues de l'echantillon System de sysmontap.
+// Les debits disque/reseau sont calcules cote collector (delta de compteurs).
+struct SystemStats {
+    let threads: Int?
+    let diskReadBps: Int?
+    let diskWriteBps: Int?
+    let diskReadOps: Int?
+    let diskWriteOps: Int?
+    let netInBps: Int?
+    let netOutBps: Int?
+    let netInPps: Int?
+    let netOutPps: Int?
 }
 
 struct TimelinePoint {
@@ -99,6 +114,9 @@ struct TimelineData {
     let cpu: [TimelinePoint]
     let temp: [TimelinePoint]
     let net: [TimelinePoint]
+    let diskRead: [TimelinePoint]
+    let diskWrite: [TimelinePoint]
+    let swap: [TimelinePoint]
     let indexing: [(t: Double, state: String)]
     let errors: [Double]
 
@@ -129,6 +147,9 @@ struct TimelineData {
         cpu = series("cpu_aggregate")
         temp = series("battery_temp_c")
         net = netPts
+        diskRead = series("disk_read_bps")
+        diskWrite = series("disk_write_bps")
+        swap = series("swap_mb")
         indexing = (o["indexing"] as? [Any] ?? []).compactMap { row in
             guard let e = row as? [Any], e.count >= 2,
                   let t = (e[0] as? NSNumber)?.doubleValue,

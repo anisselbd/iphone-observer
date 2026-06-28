@@ -42,11 +42,18 @@ def _compact(source: str, type: str, data: dict[str, Any], top_n: int) -> dict[s
     """Reduit les payloads volumineux pour le storage (top N + totaux)."""
     if source == "sysmontap" and type == "process_tick":
         procs = sorted(data.get("processes", []), key=lambda p: p.get("cpu", 0), reverse=True)
-        return {
+        out = {
             "interval_ms": data.get("interval_ms"),
             "totals": data.get("totals"),
             "processes": procs[:top_n],
         }
+        # On conserve les blocs memoire et systeme (petits, agreges): ils
+        # alimentent la timeline et l'export.
+        if "memory" in data:
+            out["memory"] = data["memory"]
+        if "system" in data:
+            out["system"] = data["system"]
+        return out
     if source == "networking" and type == "connections":
         return {
             "interfaces": data.get("interfaces"),
@@ -158,6 +165,13 @@ class Storage:
             level = _series("diagnostics", "battery", "$.level_pct")
             net = _series("networking", "connections", "$.totals.rx_rate")
             net_tx = _series("networking", "connections", "$.totals.tx_rate")
+            # Metriques systeme etendues (sysmontap System): memoire, swap, I/O.
+            mem_used = _series("sysmontap", "process_tick", "$.memory.used_mb")
+            swap = _series("sysmontap", "process_tick", "$.memory.swap_mb")
+            disk_read = _series("sysmontap", "process_tick", "$.system.disk.read_bps")
+            disk_write = _series("sysmontap", "process_tick", "$.system.disk.write_bps")
+            sysnet_in = _series("sysmontap", "process_tick", "$.system.net.in_bps")
+            sysnet_out = _series("sysmontap", "process_tick", "$.system.net.out_bps")
 
             # Indexation: transitions d'etat
             cur = conn.execute(
@@ -199,6 +213,12 @@ class Storage:
                     "battery_level": level,
                     "net_rx_rate": net,
                     "net_tx_rate": net_tx,
+                    "mem_used_mb": mem_used,
+                    "swap_mb": swap,
+                    "disk_read_bps": disk_read,
+                    "disk_write_bps": disk_write,
+                    "sysnet_in_bps": sysnet_in,
+                    "sysnet_out_bps": sysnet_out,
                 },
                 "indexing": indexing,
                 "errors": errors,
