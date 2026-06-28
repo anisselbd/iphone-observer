@@ -43,6 +43,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Force LaunchServices a relire le bundle, sinon l'icone reste en cache obsolete
+# quand on reconstruit au meme chemin.
+LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREG" ] && "$LSREG" -f "$PWD/$APP" >/dev/null 2>&1 || true
+
 echo "Cree: $PWD/$APP"
 echo "Lance-le avec: open \"$PWD/$APP\""
 echo "(1re fois, si Gatekeeper rale: clic droit > Ouvrir)"
