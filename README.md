@@ -36,12 +36,27 @@ uv run iphone-observer tunnel start
 # Identite du device
 uv run iphone-observer info
 uv run iphone-observer info --json     # dump lockdown complet
+
+# Collector + dashboard live (tunnel + sysmontap -> WebSocket)
+uv run iphone-observer serve           # http://127.0.0.1:8765
+uv run iphone-observer serve --interval 500 --port 8765
 ```
+
+## Schema d'events
+
+Tous les flux partagent une enveloppe unique horodatee:
+
+```
+{ ts, source, udid, type, seq, data }
+```
+
+`source` dans {collector, sysmontap, diagnostics, syslog, networking, pcap}.
+Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 
 ## Etat
 
 - [x] Phase 1: tunnel + connexion + device info
-- [ ] Phase 2: sysmontap -> WebSocket -> dashboard
+- [x] Phase 2: sysmontap -> WebSocket -> dashboard
 - [ ] Phase 3: batterie / diagnostics
 - [ ] Phase 4: syslog + detecteur d'indexation
 - [ ] Phase 5: reseau (pcap + networking)

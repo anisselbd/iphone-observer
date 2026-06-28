@@ -10,7 +10,7 @@ Patterns de decouverte repris du prior art joshuaswanson/ios-activity-monitor
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from pymobiledevice3.exceptions import TunneldConnectionError

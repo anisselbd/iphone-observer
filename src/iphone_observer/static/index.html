@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iphone-observer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>iphone-observer</h1>
+      <span id="device" class="device">device inconnu</span>
+    </div>
+    <div id="conn" class="pill pill-unknown">connexion...</div>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <section class="totals">
+    <div class="metric"><span class="label">CPU agrege</span><span id="t-cpu" class="value">-</span></div>
+    <div class="metric"><span class="label">Process</span><span id="t-count" class="value">-</span></div>
+    <div class="metric"><span class="label">RAM totale</span><span id="t-rss" class="value">-</span></div>
+    <div class="metric"><span class="label">Top CPU</span><span id="t-top" class="value">-</span></div>
+    <div class="metric"><span class="label">Intervalle</span><span id="t-interval" class="value">-</span></div>
+    <div class="metric"><span class="label">Derniere maj</span><span id="t-age" class="value">-</span></div>
+  </section>
+
+  <table id="proc">
+    <thead>
+      <tr>
+        <th data-key="pid" class="num">PID</th>
+        <th data-key="name">Process</th>
+        <th data-key="cpu" class="num sorted-desc">CPU %</th>
+        <th data-key="rss_mb" class="num">RAM (Mo)</th>
+        <th data-key="threads" class="num">Threads</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <footer>
+    <span id="status-line">en attente du premier tick sysmontap...</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

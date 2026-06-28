@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 
 from .device import (
@@ -45,6 +46,16 @@ def main() -> int:
     )
     p_tcheck.add_argument("--udid", help="UDID cible (defaut: premier device).")
 
+    p_serve = sub.add_parser(
+        "serve", help="Lance le collector (tunnel + sysmontap) et le dashboard web."
+    )
+    p_serve.add_argument("--udid", help="UDID cible (defaut: premier device).")
+    p_serve.add_argument(
+        "--interval", type=int, default=1000, help="Intervalle sysmontap en ms (defaut: 1000)."
+    )
+    p_serve.add_argument("--host", default="127.0.0.1", help="Bind host (defaut: 127.0.0.1).")
+    p_serve.add_argument("--port", type=int, default=8765, help="Bind port (defaut: 8765).")
+
     args = parser.parse_args()
 
     try:
@@ -54,6 +65,8 @@ def main() -> int:
             return asyncio.run(_cmd_info(args))
         if args.cmd == "tunnel" and args.tunnel_cmd == "check":
             return asyncio.run(_cmd_tunnel_check(args))
+        if args.cmd == "serve":
+            return _cmd_serve(args)
     except KeyboardInterrupt:
         print("\ninterrompu.", file=sys.stderr)
         return 130
@@ -120,6 +133,24 @@ async def _cmd_tunnel_check(args: argparse.Namespace) -> int:
         return 0
     print(f"erreur: {result['detail']}", file=sys.stderr)
     return 3
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from .server import make_app
+
+    app = make_app(udid=args.udid, interval_ms=args.interval)
+    url = f"http://{args.host}:{args.port}"
+    print(f"Collector + dashboard: {url}", file=sys.stderr)
+    print("Le tunnel et sysmontap demarrent au premier chargement. Ctrl-C pour arreter.",
+          file=sys.stderr)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    # Les threads PyTCP du tunnel userspace peuvent bloquer le join a la sortie
+    # de l'interpreteur. On force une sortie nette une fois uvicorn arrete.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":
