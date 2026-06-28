@@ -23,6 +23,10 @@ const els = {
   bHealth: document.getElementById("b-health"),
   bAdapter: document.getElementById("b-adapter"),
   bAge: document.getElementById("b-age"),
+  idxDot: document.getElementById("idx-dot"),
+  idxState: document.getElementById("idx-state"),
+  idxDetail: document.getElementById("idx-detail"),
+  syslog: document.getElementById("syslog"),
 };
 
 let lastBatteryAt = 0;
@@ -135,12 +139,52 @@ function renderBattery(b) {
     : "aucun";
 }
 
+function renderIndexing(d) {
+  const map = {
+    indexing: ["dot-indexing", "Indexation en cours"],
+    idle: ["dot-idle", "Indexation terminee"],
+    unknown: ["dot-unknown", "Indexation: evaluation..."],
+  };
+  const [cls, label] = map[d.state] || map.unknown;
+  els.idxDot.className = "dot " + cls;
+  els.idxState.textContent = label;
+  if (d.state === "indexing" && d.active_now) {
+    const names = (d.daemons || []).map((x) => `${x.name} ${x.cpu.toFixed(0)} %`).join(", ");
+    els.idxDetail.textContent = `${d.active_cpu} % CPU cumule${names ? " (" + names + ")" : ""}`;
+  } else if (d.state === "indexing") {
+    els.idxDetail.textContent = `refroidissement, calme depuis ${d.quiet_for_s} s`;
+  } else if (d.state === "idle") {
+    els.idxDetail.textContent = `calme depuis ${d.quiet_for_s} s`;
+  } else {
+    els.idxDetail.textContent = "";
+  }
+}
+
+function appendLog(d) {
+  const c = els.syslog;
+  const atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 40;
+  const div = document.createElement("div");
+  div.className = "log-line lvl-" + (d.level || "");
+  const sub = d.subsystem ? `(${d.subsystem})` : "";
+  div.innerHTML =
+    `<span class="lt">${escapeHtml(d.time)}</span> ` +
+    `<span class="lp">${escapeHtml(d.process)}${escapeHtml(sub)}</span> ` +
+    `<span class="lm">${escapeHtml(d.message)}</span>`;
+  c.appendChild(div);
+  while (c.childElementCount > 200) c.removeChild(c.firstElementChild);
+  if (atBottom) c.scrollTop = c.scrollHeight;
+}
+
 function handleEvent(ev) {
   if (ev.source === "sysmontap" && ev.type === "process_tick") {
     clearError();
     applyTick(ev.data);
   } else if (ev.source === "diagnostics" && ev.type === "battery") {
     renderBattery(ev.data);
+  } else if (ev.source === "analyzer" && ev.type === "indexing") {
+    renderIndexing(ev.data);
+  } else if (ev.source === "syslog" && ev.type === "line") {
+    appendLog(ev.data);
   } else if (ev.source === "collector" && ev.type === "device") {
     const d = ev.data;
     els.device.textContent = `${d.name} (${d.model}, iOS ${d.ios}, ${d.transport})`;

@@ -30,6 +30,7 @@ SOURCE_DIAGNOSTICS = "diagnostics"
 SOURCE_SYSLOG = "syslog"
 SOURCE_NETWORKING = "networking"
 SOURCE_PCAP = "pcap"
+SOURCE_ANALYZER = "analyzer"
 
 
 @dataclass(slots=True)

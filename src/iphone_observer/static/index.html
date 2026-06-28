@@ -17,6 +17,12 @@
 
   <div id="banner" class="banner hidden"></div>
 
+  <section class="indexing" id="indexing">
+    <span id="idx-dot" class="dot dot-unknown"></span>
+    <span id="idx-state" class="idx-state">Indexation: evaluation...</span>
+    <span id="idx-detail" class="muted"></span>
+  </section>
+
   <section class="battery" id="battery-section">
     <h2 class="section-title">Batterie <span id="b-age" class="muted"></span></h2>
     <div class="totals">
@@ -53,6 +59,9 @@
     </thead>
     <tbody id="rows"></tbody>
   </table>
+
+  <h2 class="section-title">Logs systeme <span class="muted">(daemons d'indexation et erreurs)</span></h2>
+  <section class="syslog" id="syslog"></section>
 
   <footer>
     <span id="status-line">en attente du premier tick sysmontap...</span>

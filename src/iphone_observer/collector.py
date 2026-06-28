@@ -14,9 +14,10 @@ from __future__ import annotations
 import asyncio
 from typing import Awaitable, Callable, Optional
 
+from .analyzers import indexing
 from .device import discover_device
 from .events import SOURCE_COLLECTOR, EventBus
-from .sources import diagnostics, sysmontap
+from .sources import diagnostics, syslog, sysmontap
 from .tunnel import TunnelError, UserspaceTunnel
 
 # Une source: coroutine run(rsd, bus, **opts). On la relance a chaque tunnel.
@@ -37,12 +38,17 @@ class Collector:
         self.state = "starting"
         self._tunnel = UserspaceTunnel(udid)
         self._task: Optional[asyncio.Task] = None
+        self._analyzer_tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
 
     # --- cycle de vie ---------------------------------------------------------
 
     async def start(self) -> None:
         self._stop.clear()
+        # Analyzers: taches longues, abonnees au bus, independantes du tunnel.
+        self._analyzer_tasks = [
+            asyncio.create_task(indexing.run(self.bus), name="analyzer:indexing"),
+        ]
         self._task = asyncio.create_task(self._run(), name="collector")
 
     async def stop(self) -> None:
@@ -54,6 +60,11 @@ class Collector:
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None
+        for t in self._analyzer_tasks:
+            t.cancel()
+        if self._analyzer_tasks:
+            await asyncio.gather(*self._analyzer_tasks, return_exceptions=True)
+            self._analyzer_tasks = []
         await self._tunnel.close()
         self._set_state("stopped")
 
@@ -117,6 +128,7 @@ class Collector:
         specs: list[tuple[str, SourceRun, dict]] = [
             ("sysmontap", sysmontap.run, {"interval_ms": self.interval_ms}),
             ("diagnostics", diagnostics.run, {"interval_s": self.battery_interval_s}),
+            ("syslog", syslog.run, {}),
         ]
         tasks = [
             asyncio.create_task(run(rsd, self.bus, **opts), name=f"source:{name}")

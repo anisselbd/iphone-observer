@@ -111,6 +111,35 @@ td.num { text-align: right; }
 tbody tr:hover { background: rgba(78, 161, 255, .06); }
 .cpu-hot { color: var(--warn); font-weight: 600; }
 
+.indexing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.idx-state { font-weight: 600; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.dot-indexing { background: var(--warn); box-shadow: 0 0 0 3px rgba(251,189,35,.2); }
+.dot-idle { background: var(--ok); box-shadow: 0 0 0 3px rgba(54,211,153,.2); }
+.dot-unknown { background: var(--muted); }
+
+.syslog {
+  margin: 0 20px 16px;
+  background: #0b0d11;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.log-line { white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+.log-line .lp { color: var(--accent); }
+.log-line .lt { color: #5a6273; }
+.log-line.lvl-Error .lm, .log-line.lvl-Fault .lm { color: var(--err); }
+
 footer {
   padding: 10px 20px;
   color: var(--muted);
