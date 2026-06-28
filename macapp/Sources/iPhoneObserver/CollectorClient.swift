@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 // Pilote le collector Python (sidecar GPL, process separe) et consomme son flux
 // WebSocket. Aucun import du moteur: frontiere de licence nette.
@@ -15,6 +16,10 @@ final class CollectorClient: ObservableObject {
     @Published var netSummary: String = ""
     @Published var logs: [LogLine] = []
     @Published var sidecarManaged: Bool = false
+    @Published var lastError: String?
+
+    // Vrai des qu'on a recu au moins un tick: l'app peut afficher le dashboard.
+    var hasData: Bool { totals != nil }
 
     private let host = "127.0.0.1"
     private let port = 8765
@@ -31,6 +36,16 @@ final class CollectorClient: ObservableObject {
     private var projectPath: String {
         ProcessInfo.processInfo.environment["IPHONE_OBSERVER_PROJECT"]
             ?? "\(NSHomeDirectory())/Desktop/Dev/iphone-observer"
+    }
+
+    init() {
+        // Coupe le sidecar qu'on a lance quand l'app se ferme (pas d'orphelin).
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // La notification est delivree sur la main queue.
+            MainActor.assumeIsolated { self?.stop() }
+        }
     }
 
     func start() {
@@ -69,17 +84,44 @@ final class CollectorClient: ObservableObject {
         }
     }
 
+    // Localise uv (PATH minimal quand l'app est lancee depuis le Finder).
+    private func findUV() -> String? {
+        let candidates = [
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     private func startSidecar() {
+        guard FileManager.default.fileExists(atPath: projectPath) else {
+            state = "projet introuvable"
+            lastError = "Collector introuvable a \(projectPath). Definis IPHONE_OBSERVER_PROJECT."
+            return
+        }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["uv", "run", "iphone-observer", "serve", "--port", "\(port)"]
+        let venvBin = "\(projectPath)/.venv/bin/iphone-observer"
+        if FileManager.default.isExecutableFile(atPath: venvBin) {
+            // Chemin rapide: binaire du venv directement (demarrage quasi instantane).
+            p.executableURL = URL(fileURLWithPath: venvBin)
+            p.arguments = ["serve", "--port", "\(port)"]
+        } else if let uv = findUV() {
+            // Repli: uv resout l'environnement (plus lent a froid).
+            p.executableURL = URL(fileURLWithPath: uv)
+            p.arguments = ["run", "iphone-observer", "serve", "--port", "\(port)"]
+        } else {
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            p.arguments = ["uv", "run", "iphone-observer", "serve", "--port", "\(port)"]
+        }
         p.currentDirectoryURL = URL(fileURLWithPath: projectPath)
         do {
             try p.run()
             sidecar = p
             sidecarManaged = true
         } catch {
-            state = "echec lancement collector: \(error.localizedDescription)"
+            state = "echec lancement collector"
+            lastError = "Impossible de lancer le collector: \(error.localizedDescription)"
         }
     }
 
@@ -132,7 +174,10 @@ final class CollectorClient: ObservableObject {
         case ("networking", "connections"): applyNet(d)
         case ("syslog", "line"): applyLog(d)
         case ("collector", "device"): applyDevice(d)
-        case ("collector", "status"): if let s = d["state"] as? String { state = s }
+        case ("collector", "status"):
+            if let s = d["state"] as? String { state = s }
+        case ("collector", "error"):
+            if let m = d["message"] as? String { lastError = m }
         default: break
         }
     }
@@ -160,6 +205,7 @@ final class CollectorClient: ObservableObject {
         }
         // Cap pour garder l'UI fluide.
         processes = Array(rows.sorted { $0.cpu > $1.cpu }.prefix(250))
+        lastError = nil // la donnee coule: plus d'erreur a montrer
         tickCount += 1
         if debug && tickCount % 3 == 1 {
             let cpu = totals.map { Int($0.aggregateCpu) } ?? 0

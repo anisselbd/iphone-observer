@@ -56,15 +56,24 @@ separe, jamais linke: frontiere GPL nette) et lui parle en WebSocket. Fenetre
 dashboard (etat, device, batterie, indexation, table process, reseau, logs) +
 icone menu bar avec statut rapide.
 
+Usage simple (sans terminal): construire le `.app` une fois, puis double-cliquer.
+
 ```bash
 cd macapp
-swift build
-swift run            # ou .build/debug/iPhoneObserver
+./build-app.sh                 # produit iPhoneObserver.app
+open iPhoneObserver.app        # ou double-clic dans le Finder
 ```
 
-Si aucun collector ne repond sur le port 8765, l'app en lance un
-(`uv run iphone-observer serve`) depuis `~/Desktop/Dev/iphone-observer`
-(surchargeable par la variable d'env IPHONE_OBSERVER_PROJECT).
+Au lancement, l'app demarre le collector toute seule (binaire du venv
+`.venv/bin/iphone-observer`, demarrage ~0.3s; repli sur `uv run` sinon), et
+affiche un ecran "Branche ton iPhone" tant que le device n'est pas pret
+(branche, deverrouille, Mode developpeur actif). Des que la donnee coule, elle
+bascule sur le dashboard. Au 1er lancement d'un binaire fraichement compile,
+macOS fait un scan Gatekeeper one-time (~20s); les lancements suivants sont
+quasi instantanes (~0.6s).
+
+Le chemin du projet est `~/Desktop/Dev/iphone-observer` par defaut
+(surchargeable par la variable d'env IPHONE_OBSERVER_PROJECT). Dev: `swift run`.
 
 Limite connue: SwiftUI `Table` emet un warning `reentrant operation in NSTableView`
 avec un flux qui change chaque seconde (non fatal). A revisiter (List custom ou

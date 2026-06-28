@@ -21,6 +21,7 @@ captures/
 .build/
 .swiftpm/
 Package.resolved
+*.app/
 
 # OS
 .DS_Store

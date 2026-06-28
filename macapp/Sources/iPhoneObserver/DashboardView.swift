@@ -1,5 +1,54 @@
 import SwiftUI
 
+struct WaitingView: View {
+    @EnvironmentObject var client: CollectorClient
+
+    private var message: String {
+        if let e = client.lastError, !e.isEmpty { return e }
+        switch client.state {
+        case "lancement du collector": return "Demarrage du collector..."
+        case "connecting", "connexion", "connected": return "Connexion a l'iPhone..."
+        default: return "Branche ton iPhone en USB et deverrouille-le."
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "iphone.gen3")
+                .font(.system(size: 54))
+                .foregroundStyle(.secondary)
+            Text("En attente de l'iPhone")
+                .font(.title2.weight(.semibold))
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
+            ProgressView().controlSize(.small).padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 6) {
+                checkItem("Branche l'iPhone en USB")
+                checkItem("Deverrouille-le")
+                checkItem("Mode developpeur active (Reglages > Confidentialite et securite)")
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            if client.sidecarManaged {
+                Label("collector lance par l'app", systemImage: "bolt.horizontal.circle")
+                    .font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func checkItem(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "circle.dotted")
+            Text(text)
+        }
+    }
+}
+
 struct StatePill: View {
     let state: String
     private var color: Color {
@@ -48,6 +97,16 @@ struct DashboardView: View {
     @EnvironmentObject var client: CollectorClient
 
     var body: some View {
+        Group {
+            if client.hasData {
+                dashboard
+            } else {
+                WaitingView()
+            }
+        }
+    }
+
+    private var dashboard: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
             indexingBanner
