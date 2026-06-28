@@ -49,6 +49,27 @@ uv run iphone-observer serve --no-store
 uv run iphone-observer serve --db /chemin/vers/historique.sqlite
 ```
 
+## App macOS native (phase 7)
+
+App SwiftUI dans `macapp/`. Elle lance le collector Python en **sidecar** (process
+separe, jamais linke: frontiere GPL nette) et lui parle en WebSocket. Fenetre
+dashboard (etat, device, batterie, indexation, table process, reseau, logs) +
+icone menu bar avec statut rapide.
+
+```bash
+cd macapp
+swift build
+swift run            # ou .build/debug/iPhoneObserver
+```
+
+Si aucun collector ne repond sur le port 8765, l'app en lance un
+(`uv run iphone-observer serve`) depuis `~/Desktop/Dev/iphone-observer`
+(surchargeable par la variable d'env IPHONE_OBSERVER_PROJECT).
+
+Limite connue: SwiftUI `Table` emet un warning `reentrant operation in NSTableView`
+avec un flux qui change chaque seconde (non fatal). A revisiter (List custom ou
+throttle) si ca devient bloquant sur une future version de macOS.
+
 ## Storage et timeline
 
 Tout event est persiste dans SQLite (table `events(seq, ts, source, type, udid,
@@ -88,7 +109,7 @@ Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 - [x] Phase 4: syslog (filtre + rate-limite) + detecteur d'indexation (CPU des daemons, hysteresis)
 - [x] Phase 5: reseau (channel networking live; pcap gate par iOS 26, voir limites)
 - [x] Phase 6: storage SQLite + timeline unifiee (CPU + temp batterie + reseau + indexation + erreurs)
-- [ ] Phase 7: shell natif
+- [x] Phase 7: shell natif SwiftUI (fenetre dashboard + menu bar, collector en sidecar)
 
 ## Convention
 

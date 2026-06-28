@@ -17,5 +17,10 @@ build/
 data/
 captures/
 
+# Swift / SPM (app native macapp/)
+.build/
+.swiftpm/
+Package.resolved
+
 # OS
 .DS_Store
