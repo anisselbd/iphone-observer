@@ -19,6 +19,12 @@ final class CollectorClient: ObservableObject {
     @Published var lastError: String?
     @Published var timeline: TimelineData?
     @Published var cpuCores: Int = 6
+    @Published var paused: Bool = false        // fige la table process pour lire
+    @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
+
+    // Lissage du CPU par process (moyenne mobile) pour stabiliser l'ordre.
+    private var smoothedCpu: [Int: Double] = [:]
+    private var lastTableEmit: Date = .distantPast
 
     // Vrai des qu'on a recu au moins un tick: l'app peut afficher le dashboard.
     var hasData: Bool { totals != nil }
@@ -208,19 +214,31 @@ final class CollectorClient: ObservableObject {
             )
         }
         let raw = d["processes"] as? [[String: Any]] ?? []
+        let alpha = 0.4 // poids de la valeur instantanee (plus bas = plus lisse)
+        var present = Set<Int>()
         let rows = raw.compactMap { p -> ProcessRow? in
             guard let pid = numI(p["pid"]) else { return nil }
+            present.insert(pid)
+            let instant = numD(p["cpu"]) ?? 0
+            let prev = smoothedCpu[pid] ?? instant
+            let sm = alpha * instant + (1 - alpha) * prev
+            smoothedCpu[pid] = sm
             return ProcessRow(
                 pid: pid,
                 name: p["name"] as? String ?? "pid \(pid)",
-                cpu: numD(p["cpu"]) ?? 0,
+                cpu: (sm * 10).rounded() / 10,
                 rssMb: numD(p["rss_mb"]) ?? 0,
                 threads: numI(p["threads"]) ?? 0
             )
         }
-        // Cap pour garder l'UI fluide.
-        processes = Array(rows.sorted { $0.cpu > $1.cpu }.prefix(250))
+        smoothedCpu = smoothedCpu.filter { present.contains($0.key) }
         lastError = nil // la donnee coule: plus d'erreur a montrer
+
+        // Cadence reduite + pause: la table ne se reordonne pas chaque seconde.
+        if !paused, Date().timeIntervalSince(lastTableEmit) >= tableIntervalS {
+            processes = Array(rows.sorted { $0.cpu > $1.cpu }.prefix(250))
+            lastTableEmit = Date()
+        }
         tickCount += 1
         if debug && tickCount % 3 == 1 {
             let cpu = totals.map { Int($0.aggregateCpu) } ?? 0

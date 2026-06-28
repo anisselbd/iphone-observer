@@ -300,13 +300,25 @@ struct ProcessTab: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("\(client.totals?.processCount ?? 0) process")
-                        .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Text(client.paused ? "\(client.totals?.processCount ?? 0) process (fige)" : "\(client.totals?.processCount ?? 0) process")
+                        .font(.caption).foregroundStyle(client.paused ? Color.warnYellow : .secondary)
                     Spacer()
+                    Button { client.paused.toggle() } label: {
+                        Image(systemName: client.paused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(client.paused ? "Reprendre" : "Figer pour lire")
+                    Picker("", selection: Binding(get: { client.tableIntervalS },
+                                                  set: { client.tableIntervalS = $0 })) {
+                        Text("1s").tag(1.0)
+                        Text("2s").tag(2.0)
+                        Text("5s").tag(5.0)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 130)
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.tertiary)
-                        TextField("Filtrer", text: $query).textFieldStyle(.plain).frame(width: 160)
+                        TextField("Filtrer", text: $query).textFieldStyle(.plain).frame(width: 150)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(.white.opacity(0.05), in: Capsule())
