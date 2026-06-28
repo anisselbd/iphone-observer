@@ -36,6 +36,36 @@ final class CollectorClient: ObservableObject {
     @Published var tempAlertC: Double = 39     // temperature batterie
     private var cpuOverCount = 0               // ticks consecutifs au-dessus du seuil
     private var lastNotified: [String: Date] = [:]  // anti-spam par type
+
+    // Watchlist (#13): noms de process epingles, persistes.
+    @Published var watchlist: Set<String> = [] {
+        didSet { UserDefaults.standard.set(Array(watchlist), forKey: "watchlist") }
+    }
+    func togglePin(_ name: String) {
+        if watchlist.contains(name) { watchlist.remove(name) } else { watchlist.insert(name) }
+    }
+    var pinnedProcesses: [ProcessRow] {
+        processes.filter { watchlist.contains($0.name) }.sorted { $0.cpu > $1.cpu }
+    }
+
+    // Indices confidentialite: daemons media. CE N'EST PAS une preuve d'acces
+    // camera/micro (ces process tournent aussi pour la lecture audio, FaceTime).
+    // Seule verite: pastille verte/orange iOS + Rapport de confidentialite.
+    private let cameraProcs = ["camerad", "avconferenced"]
+    private let micProcs = ["mediaserverd", "audiomxd", "avconferenced"]
+    private let mediaThreshold = 1.0
+    var mediaProcesses: [ProcessRow] {
+        let names = Set(cameraProcs + micProcs)
+        return processes
+            .filter { p in names.contains { p.name.lowercased().contains($0) } }
+            .sorted { $0.cpu > $1.cpu }
+    }
+    var cameraActive: Bool {
+        processes.contains { p in cameraProcs.contains { p.name.lowercased().contains($0) } && p.cpu >= mediaThreshold }
+    }
+    var micActive: Bool {
+        processes.contains { p in micProcs.contains { p.name.lowercased().contains($0) } && p.cpu >= mediaThreshold }
+    }
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -73,6 +103,7 @@ final class CollectorClient: ObservableObject {
     }
 
     init() {
+        watchlist = Set(UserDefaults.standard.stringArray(forKey: "watchlist") ?? [])
         // Coupe le sidecar qu'on a lance quand l'app se ferme (pas d'orphelin).
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main

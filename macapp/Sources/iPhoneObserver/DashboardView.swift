@@ -73,8 +73,73 @@ struct HeaderBar: View {
                 Label("collector auto", systemImage: "bolt.horizontal.circle")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
+            PrivacyDots()
             AlertsBell()
             StatePill(state: client.state)
+        }
+    }
+}
+
+struct PrivacyDots: View {
+    @EnvironmentObject var client: CollectorClient
+    @State private var show = false
+
+    var body: some View {
+        Button { show.toggle() } label: {
+            HStack(spacing: 6) {
+                dot(system: "camera.fill", active: client.cameraActive, color: .okGreen)
+                dot(system: "mic.fill", active: client.micActive, color: .warnYellow)
+            }
+        }
+        .buttonStyle(.borderless)
+        .help("Indices d'activite camera/micro (indirects)")
+        .popover(isPresented: $show, arrowEdge: .bottom) { PrivacyPopover() }
+    }
+
+    private func dot(system: String, active: Bool, color: Color) -> some View {
+        Image(systemName: system)
+            .font(.caption)
+            .foregroundStyle(active ? color : Color.secondary.opacity(0.4))
+            .shadow(color: active ? color.opacity(0.8) : .clear, radius: active ? 4 : 0)
+    }
+}
+
+struct PrivacyPopover: View {
+    @EnvironmentObject var client: CollectorClient
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Camera / Micro").font(.callout.weight(.semibold))
+            HStack(spacing: 16) {
+                statusLine("camera.fill", "Camera", client.cameraActive, .okGreen)
+                statusLine("mic.fill", "Micro", client.micActive, .warnYellow)
+            }
+            Divider()
+            if client.mediaProcesses.isEmpty {
+                Text("Aucun daemon media actif detecte.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Processus media (CPU live)").font(.caption2).foregroundStyle(.tertiary)
+                ForEach(client.mediaProcesses.prefix(6)) { p in
+                    HStack {
+                        Text(p.name).font(.system(.caption, design: .monospaced))
+                        Spacer()
+                        Text(String(format: "%.1f %%", p.cpu)).font(.caption).monospacedDigit()
+                            .foregroundStyle(p.cpu >= 1 ? Color.warnYellow : .secondary)
+                    }
+                }
+            }
+            Divider()
+            Text("Indice indirect seulement. Ces process tournent aussi pour la lecture audio ou FaceTime. La verite sur l'acces camera/micro = la pastille verte/orange iOS et Reglages > Confidentialite > Rapport de confidentialite des apps.")
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14).frame(width: 320)
+    }
+
+    private func statusLine(_ icon: String, _ label: String, _ active: Bool, _ color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).foregroundStyle(active ? color : Color.secondary.opacity(0.5))
+            Text(active ? "\(label): activite" : "\(label): calme")
+                .font(.caption).foregroundStyle(active ? color : .secondary)
         }
     }
 }
@@ -504,6 +569,10 @@ struct ProcessTab: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 8) {
+                if !client.pinnedProcesses.isEmpty {
+                    PinnedStrip()
+                    Divider()
+                }
                 HStack(spacing: 12) {
                     Text(client.paused ? "\(client.totals?.processCount ?? 0) process (fige)" : "\(client.totals?.processCount ?? 0) process")
                         .font(.caption).foregroundStyle(client.paused ? Color.warnYellow : .secondary)
@@ -544,11 +613,16 @@ struct ProcessTab: View {
                 .contextMenu(forSelectionType: ProcessRow.ID.self) { ids in
                     if let pid = ids.first {
                         Button("Voir le detail") { detail = PidSel(id: pid) }
+                        if let row = rows.first(where: { $0.pid == pid }) {
+                            Button(client.watchlist.contains(row.name) ? "Retirer des epingles" : "Epingler") {
+                                client.togglePin(row.name)
+                            }
+                        }
                     }
                 } primaryAction: { ids in
                     if let pid = ids.first { detail = PidSel(id: pid) }
                 }
-                Text("Double-clic sur un process pour son historique. Energie = score relatif (powerScore device), sans unite physique.")
+                Text("Double-clic: detail. Clic droit: epingler. Energie = score relatif (powerScore device), sans unite physique.")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -652,6 +726,31 @@ struct ProcessDetailView: View {
                 RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.03))
                     .frame(height: 120)
                     .overlay(ProgressView().controlSize(.small))
+            }
+        }
+    }
+}
+
+struct PinnedStrip: View {
+    @EnvironmentObject var client: CollectorClient
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Epingles", systemImage: "pin.fill").font(.caption2).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(client.pinnedProcesses) { p in
+                        HStack(spacing: 6) {
+                            Text(p.name).font(.caption.weight(.medium)).lineLimit(1)
+                            Text(String(format: "%.0f%%", p.cpu)).font(.caption2).monospacedDigit()
+                                .foregroundStyle(p.cpu >= 30 ? Color.warnYellow : .secondary)
+                            Button { client.togglePin(p.name) } label: {
+                                Image(systemName: "xmark.circle.fill").font(.caption2)
+                            }.buttonStyle(.borderless).foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(Color.accentBlue.opacity(0.12), in: Capsule())
+                    }
+                }
             }
         }
     }
