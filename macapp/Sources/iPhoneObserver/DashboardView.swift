@@ -298,10 +298,27 @@ struct SystemStrip: View {
                 sep()
                 single(icon: "square.stack.3d.up.fill", title: "Threads",
                        value: s?.threads.map { "\($0)" }, color: .accentBlue)
+                sep()
+                single(icon: "cpu.fill", title: "GPU",
+                       value: gpuText, color: .accentBlue)
+                sep()
+                single(icon: "speedometer", title: "FPS",
+                       value: fpsText, color: .okGreen)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 11).padding(.horizontal, 16)
         }
+    }
+
+    private var gpuText: String? {
+        guard let g = client.graphics else { return nil }
+        if !g.available { return "n/d" }
+        return g.gpuUtil.map { "\(Int($0)) %" }
+    }
+    private var fpsText: String? {
+        guard let g = client.graphics else { return nil }
+        if !g.available { return "n/d" }
+        return g.fps.map { "\(Int($0))" }
     }
 
     private func sep() -> some View {
@@ -416,6 +433,8 @@ struct ProcessTab: View {
                         .width(min: 90, ideal: 100)
                     TableColumn("RAM (Mo)", value: \.rssMb) { Text(String(format: "%.1f", $0.rssMb)).monospacedDigit() }
                         .width(min: 80, ideal: 90)
+                    TableColumn("Energie", value: \.power) { Text(String(format: "%.0f", $0.power)).monospacedDigit().foregroundStyle(.secondary) }
+                        .width(min: 64, ideal: 76)
                     TableColumn("Threads", value: \.threads) { Text("\($0.threads)").monospacedDigit().foregroundStyle(.secondary) }
                         .width(min: 64, ideal: 74)
                 }
@@ -427,7 +446,7 @@ struct ProcessTab: View {
                 } primaryAction: { ids in
                     if let pid = ids.first { detail = PidSel(id: pid) }
                 }
-                Text("Double-clic sur un process pour son historique CPU/RAM.")
+                Text("Double-clic sur un process pour son historique. Energie = score relatif (powerScore device), sans unite physique.")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -463,6 +482,7 @@ struct ProcessDetailView: View {
                 HStack(spacing: 18) {
                     stat("CPU", String(format: "%.1f %%", c.cpu), .accentBlue)
                     stat("RAM", String(format: "%.1f Mo", c.rssMb), .okGreen)
+                    stat("Energie", String(format: "%.0f", c.power), Color(red: 0.78, green: 0.55, blue: 1.0))
                     stat("Threads", "\(c.threads)", .warnYellow)
                 }
             } else {
@@ -474,20 +494,24 @@ struct ProcessDetailView: View {
             // dependre d'une publication globale du client.
             TimelineView(.periodic(from: .now, by: 1.5)) { _ in
                 let h = client.history(for: pid)
-                VStack(alignment: .leading, spacing: 12) {
-                    historyChart("CPU %", h.map { TimelinePoint(t: $0.t, v: $0.cpu) },
-                                 .accentBlue) { String(format: "%.0f %%", $0) }
-                    historyChart("RAM (Mo)", h.map { TimelinePoint(t: $0.t, v: $0.rss) },
-                                 .okGreen) { String(format: "%.0f Mo", $0) }
-                    Text(h.count >= 2
-                         ? "\(h.count) echantillons (1 Hz) sur cette session"
-                         : "Historique en cours d'accumulation...")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        historyChart("CPU %", h.map { TimelinePoint(t: $0.t, v: $0.cpu) },
+                                     .accentBlue) { String(format: "%.0f %%", $0) }
+                        historyChart("RAM (Mo)", h.map { TimelinePoint(t: $0.t, v: $0.rss) },
+                                     .okGreen) { String(format: "%.0f Mo", $0) }
+                        historyChart("Energie (relatif)", h.map { TimelinePoint(t: $0.t, v: $0.power) },
+                                     Color(red: 0.78, green: 0.55, blue: 1.0)) { String(format: "%.0f", $0) }
+                        Text(h.count >= 2
+                             ? "\(h.count) echantillons (1 Hz) sur cette session"
+                             : "Historique en cours d'accumulation...")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
                 }
             }
         }
         .padding(20)
-        .frame(width: 460, height: 420)
+        .frame(width: 470, height: 560)
         .background(windowBackground)
     }
 
@@ -571,6 +595,12 @@ struct TimelineTab: View {
                         }
                         if !tl.swap.isEmpty {
                             series("Swap", tl.swap, .warnYellow) { "\(Int($0)) Mo" }
+                        }
+                        if !tl.gpu.isEmpty {
+                            series("GPU utilisation", tl.gpu, Color(red: 0.78, green: 0.55, blue: 1.0)) { "\(Int($0)) %" }
+                        }
+                        if !tl.fps.isEmpty {
+                            series("FPS (Core Animation)", tl.fps, .okGreen) { "\(Int($0))" }
                         }
                         Text("\(Int(tl.minutes)) dernieres minutes, \(tl.totalRows) events stockes")
                             .font(.caption2).foregroundStyle(.tertiary)

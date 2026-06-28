@@ -21,6 +21,7 @@ final class CollectorClient: ObservableObject {
     @Published var cpuCores: Int = 6
     @Published var memory: Memory?
     @Published var systemStats: SystemStats?
+    @Published var graphics: GraphicsStats?
     @Published var paused: Bool = false        // fige la table process pour lire
     @Published var tableIntervalS: Double = 2.0 // cadence de maj de la table
 
@@ -201,6 +202,20 @@ final class CollectorClient: ObservableObject {
         let d = ev["data"] as? [String: Any] ?? [:]
         switch (source, type) {
         case ("sysmontap", "process_tick"): applyTick(d)
+        case ("graphics", "sample"):
+            graphics = GraphicsStats(
+                gpuUtil: numD(d["gpu_util"]),
+                rendererUtil: numD(d["renderer_util"]),
+                tilerUtil: numD(d["tiler_util"]),
+                fps: numD(d["fps"]),
+                gpuMemInuseMb: numD(d["gpu_mem_inuse"]).map { $0 / 1_000_000 },
+                available: true,
+                reason: nil
+            )
+        case ("graphics", "unavailable"):
+            graphics = GraphicsStats(gpuUtil: nil, rendererUtil: nil, tilerUtil: nil,
+                                     fps: nil, gpuMemInuseMb: nil, available: false,
+                                     reason: d["reason"] as? String)
         case ("diagnostics", "battery"): battery = parseBattery(d)
         case ("analyzer", "indexing"): indexing = parseIndexing(d)
         case ("networking", "connections"): applyNet(d)
@@ -262,13 +277,15 @@ final class CollectorClient: ObservableObject {
             let name = p["name"] as? String ?? "pid \(pid)"
             let rss = numD(p["rss_mb"]) ?? 0
             let cpu = (sm * 10).rounded() / 10
+            let power = numD(p["power"]) ?? 0
             // Historique 1 Hz pour la vue de detail (toute la liste, pas le top).
             procNames[pid] = name
             var h = historyStore[pid] ?? []
-            h.append(ProcSample(t: now, cpu: cpu, rss: rss))
+            h.append(ProcSample(t: now, cpu: cpu, rss: rss, power: power))
             if h.count > maxHistory { h.removeFirst(h.count - maxHistory) }
             historyStore[pid] = h
-            return ProcessRow(pid: pid, name: name, cpu: cpu, rssMb: rss, threads: numI(p["threads"]) ?? 0)
+            return ProcessRow(pid: pid, name: name, cpu: cpu, rssMb: rss,
+                              threads: numI(p["threads"]) ?? 0, power: power)
         }
         smoothedCpu = smoothedCpu.filter { present.contains($0.key) }
         historyStore = historyStore.filter { present.contains($0.key) }

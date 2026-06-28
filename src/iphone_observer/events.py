@@ -31,6 +31,7 @@ SOURCE_SYSLOG = "syslog"
 SOURCE_NETWORKING = "networking"
 SOURCE_PCAP = "pcap"
 SOURCE_ANALYZER = "analyzer"
+SOURCE_GRAPHICS = "graphics"
 
 
 @dataclass(slots=True)
@@ -99,3 +100,7 @@ class EventBus:
     def snapshot(self) -> list[dict]:
         """Dernier event connu par (source, type), pour amorcer un client."""
         return list(self._latest.values())
+
+    def latest(self, source: str, type: str) -> dict | None:
+        """Dernier event d'un couple (source, type), ou None."""
+        return self._latest.get((source, type))

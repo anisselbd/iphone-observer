@@ -110,12 +110,16 @@ def _normalize(raw: dict[str, Any]) -> Optional[dict[str, Any]]:
     if not isinstance(rss, int):
         rss = raw.get("memResidentSize") or 0
     threads = raw.get("threadCount") or 0
+    # powerScore: impact energetique relatif du process (jauge device, sans
+    # unite physique). Dispo pour chaque process, contrairement a la jauge Xcode.
+    power = raw.get("powerScore")
     return {
         "pid": pid,
         "name": str(name),
         "cpu": round(cpu, 2),
         "rss_mb": round(int(rss) / (1024 * 1024), 1),
         "threads": int(threads),
+        "power": round(float(power), 1) if isinstance(power, (int, float)) else 0.0,
     }
 
 

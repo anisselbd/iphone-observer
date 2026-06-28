@@ -172,6 +172,8 @@ class Storage:
             disk_write = _series("sysmontap", "process_tick", "$.system.disk.write_bps")
             sysnet_in = _series("sysmontap", "process_tick", "$.system.net.in_bps")
             sysnet_out = _series("sysmontap", "process_tick", "$.system.net.out_bps")
+            gpu = _series("graphics", "sample", "$.gpu_util")
+            fps = _series("graphics", "sample", "$.fps")
 
             # Indexation: transitions d'etat
             cur = conn.execute(
@@ -219,6 +221,8 @@ class Storage:
                     "disk_write_bps": disk_write,
                     "sysnet_in_bps": sysnet_in,
                     "sysnet_out_bps": sysnet_out,
+                    "gpu_util": gpu,
+                    "fps": fps,
                 },
                 "indexing": indexing,
                 "errors": errors,

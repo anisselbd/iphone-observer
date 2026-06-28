@@ -8,6 +8,7 @@ struct ProcessRow: Identifiable {
     let cpu: Double
     let rssMb: Double
     let threads: Int
+    let power: Double   // score energie relatif (powerScore device), sans unite
     var id: Int { pid }
 }
 
@@ -18,7 +19,20 @@ struct ProcSample: Identifiable {
     let t: Double
     let cpu: Double
     let rss: Double
+    let power: Double
     var id: Double { t }
+}
+
+// GPU et FPS systeme (channel Instruments OpenGL). available=false si le service
+// a refuse de demarrer (on l'affiche tel quel, sans inventer de valeur).
+struct GraphicsStats {
+    let gpuUtil: Double?
+    let rendererUtil: Double?
+    let tilerUtil: Double?
+    let fps: Double?
+    let gpuMemInuseMb: Double?
+    let available: Bool
+    let reason: String?
 }
 
 struct Totals {
@@ -127,6 +141,8 @@ struct TimelineData {
     let diskRead: [TimelinePoint]
     let diskWrite: [TimelinePoint]
     let swap: [TimelinePoint]
+    let gpu: [TimelinePoint]
+    let fps: [TimelinePoint]
     let indexing: [(t: Double, state: String)]
     let errors: [Double]
 
@@ -160,6 +176,8 @@ struct TimelineData {
         diskRead = series("disk_read_bps")
         diskWrite = series("disk_write_bps")
         swap = series("swap_mb")
+        gpu = series("gpu_util")
+        fps = series("fps")
         indexing = (o["indexing"] as? [Any] ?? []).compactMap { row in
             guard let e = row as? [Any], e.count >= 2,
                   let t = (e[0] as? NSNumber)?.doubleValue,
