@@ -64,6 +64,11 @@ def main() -> int:
     p_serve.add_argument(
         "--no-store", action="store_true", help="Desactive la persistance SQLite."
     )
+    p_serve.add_argument(
+        "--parent-pid", type=int, default=None,
+        help="PID du process parent (l'app). Le sidecar s'arrete si ce parent "
+             "disparait, pour ne jamais laisser de collector orphelin.",
+    )
 
     p_cap = sub.add_parser(
         "capture", help="Sniffe le trafic brut vers un fichier .pcap (pcapng)."
@@ -155,11 +160,32 @@ async def _cmd_tunnel_check(args: argparse.Namespace) -> int:
     return 3
 
 
+def _watch_parent(parent_pid: int) -> None:
+    """Arrete net le sidecar si le process parent (l'app) disparait. Evite les
+    collectors orphelins quand l'app est tuee brutalement (sans willTerminate).
+    Thread daemon: un os._exit contourne aussi le blocage de fermeture du tunnel."""
+    import threading
+
+    def loop() -> None:
+        import time as _time
+
+        while True:
+            _time.sleep(2.0)
+            try:
+                os.kill(parent_pid, 0)  # 0 = ne tue pas, teste juste l'existence
+            except OSError:
+                os._exit(0)
+
+    threading.Thread(target=loop, daemon=True, name="parent-watch").start()
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from .server import make_app
 
+    if args.parent_pid:
+        _watch_parent(args.parent_pid)
     db_path = None if args.no_store else args.db
     app = make_app(udid=args.udid, interval_ms=args.interval, db_path=db_path)
     url = f"http://{args.host}:{args.port}"

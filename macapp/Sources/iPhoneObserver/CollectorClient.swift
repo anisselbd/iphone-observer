@@ -257,18 +257,22 @@ final class CollectorClient: ObservableObject {
             return
         }
         let p = Process()
+        // PID de l'app: le sidecar s'arretera tout seul si l'app disparait
+        // (crash ou kill brutal), pour ne jamais laisser de collector orphelin.
+        let myPid = "\(ProcessInfo.processInfo.processIdentifier)"
+        let serveArgs = ["serve", "--port", "\(port)", "--parent-pid", myPid]
         let venvBin = "\(projectPath)/.venv/bin/iphone-observer"
         if FileManager.default.isExecutableFile(atPath: venvBin) {
             // Chemin rapide: binaire du venv directement (demarrage quasi instantane).
             p.executableURL = URL(fileURLWithPath: venvBin)
-            p.arguments = ["serve", "--port", "\(port)"]
+            p.arguments = serveArgs
         } else if let uv = findUV() {
             // Repli: uv resout l'environnement (plus lent a froid).
             p.executableURL = URL(fileURLWithPath: uv)
-            p.arguments = ["run", "iphone-observer", "serve", "--port", "\(port)"]
+            p.arguments = ["run", "iphone-observer"] + serveArgs
         } else {
             p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            p.arguments = ["uv", "run", "iphone-observer", "serve", "--port", "\(port)"]
+            p.arguments = ["uv", "run", "iphone-observer"] + serveArgs
         }
         p.currentDirectoryURL = URL(fileURLWithPath: projectPath)
         do {
