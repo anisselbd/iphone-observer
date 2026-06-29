@@ -471,6 +471,7 @@ struct SystemStrip: View {
                 sep()
                 single(icon: "speedometer", title: "FPS",
                        value: fpsText, color: .okGreen)
+                    .help(fpsHelp)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 11).padding(.horizontal, 16)
@@ -486,6 +487,12 @@ struct SystemStrip: View {
         guard let g = client.graphics else { return nil }
         if !g.available { return "n/d" }
         return g.fps.map { "\(Int($0))" }
+    }
+    private var fpsHelp: String {
+        let rate = client.displayInfo?.refreshRate.map { "\(Int($0)) Hz" } ?? "jusqu'a 120 Hz"
+        let pro = client.displayInfo?.promotion == true ? " ProMotion" : ""
+        return "FPS Core Animation, plafonne autour de 60 (sonde legacy graphics.opengl). "
+            + "L'ecran tourne en \(rate)\(pro): voir l'onglet Appareil."
     }
 
     private func sep() -> some View {
@@ -896,8 +903,9 @@ struct DeviceTab: View {
                 exportBar
                 HStack(alignment: .top, spacing: 12) {
                     storageCard
-                    screenshotCard
+                    displayCard
                 }
+                screenshotCard
                 crashesCard
                 appsCard
             }
@@ -950,6 +958,34 @@ struct DeviceTab: View {
                     Text("\(String(format: "%.0f", s.freeGo)) Go libres").font(.caption2).foregroundStyle(.tertiary)
                 } else {
                     Text("Lecture du stockage...").font(.caption).foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var displayCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Ecran", systemImage: "display").font(.caption).foregroundStyle(.secondary)
+                if let d = client.displayInfo {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(d.refreshRate.map { "\(Int($0))" } ?? "?")
+                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        Text("Hz" + (d.promotion ? " ProMotion" : "")).foregroundStyle(.secondary)
+                    }
+                    Text(d.summary).font(.caption2).foregroundStyle(.tertiary)
+                    if let bl = d.backlight {
+                        Label(bl == "on" ? "ecran allume" : "ecran eteint",
+                              systemImage: bl == "on" ? "sun.max.fill" : "moon.fill")
+                            .font(.caption2)
+                            .foregroundStyle(bl == "on" ? Color.warnYellow : .secondary)
+                    }
+                    Text("La jauge FPS (onglet principal) plafonne a ~60: c'est une limite de la sonde, pas de l'ecran.")
+                        .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Lecture de l'ecran...").font(.caption).foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
             }

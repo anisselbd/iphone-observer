@@ -135,6 +135,36 @@ class Collector:
         except Exception:  # noqa: BLE001
             pass
 
+    async def _fetch_display(self, rsd) -> None:
+        """Recupere l'info ecran reelle via CoreDevice (taux de rafraichissement,
+        resolution, gamut) une fois par connexion. Best-effort. Confirme le vrai
+        taux ProMotion, que la jauge graphics.opengl ne sait pas remonter (plafond 60)."""
+        from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
+
+        try:
+            async with DeviceInfoService(rsd) as svc:
+                info = await svc.get_display_info()
+        except Exception:  # noqa: BLE001 - best-effort
+            return
+        displays = info.get("displays", []) if isinstance(info, dict) else []
+        primary = next((d for d in displays if d.get("primary")), None)
+        if not primary:
+            return
+        mode = primary.get("currentMode", {}) or {}
+        native = primary.get("nativeSize") or [0, 0]
+        rate = mode.get("refreshRate")
+        data = {
+            "refresh_rate": rate,
+            "native_width": int(native[0]) if len(native) > 0 else None,
+            "native_height": int(native[1]) if len(native) > 1 else None,
+            "color_gamut": mode.get("colorGamut"),
+            "hdr_mode": mode.get("hdrMode"),
+            "scale": mode.get("preferredUIScale") or primary.get("pointScale"),
+            "backlight": info.get("backlightState"),
+            "promotion": isinstance(rate, (int, float)) and rate >= 90,
+        }
+        self.bus.emit(SOURCE_COLLECTOR, "display", data)
+
     async def _run(self) -> None:
         await self._resolve_identity()
         backoff = 1.0
@@ -147,6 +177,7 @@ class Collector:
                 backoff = 1.0
                 if self._cpu_cores is None:
                     await self._fetch_hardware(rsd)
+                await self._fetch_display(rsd)
                 await self._run_sources(rsd)
             except asyncio.CancelledError:
                 raise

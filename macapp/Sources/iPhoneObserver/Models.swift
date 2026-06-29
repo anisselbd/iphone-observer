@@ -125,6 +125,33 @@ struct SystemStats {
     let netOutPps: Int?
 }
 
+// Info ecran reelle (CoreDevice getdisplayinfo). Le refreshRate ici est celui du
+// mode du panneau (jusqu'a 120 Hz ProMotion), independant de la jauge FPS legacy.
+struct DisplayInfo {
+    let refreshRate: Double?
+    let nativeWidth: Int?
+    let nativeHeight: Int?
+    let colorGamut: String?
+    let hdrMode: String?
+    let promotion: Bool
+    let backlight: String?
+
+    private var gamutLabel: String? {
+        switch colorGamut {
+        case "displayP3": return "P3"
+        case "sRGB": return "sRGB"
+        default: return colorGamut
+        }
+    }
+    var summary: String {
+        var parts: [String] = []
+        if let r = refreshRate { parts.append("\(Int(r)) Hz" + (promotion ? " ProMotion" : "")) }
+        if let w = nativeWidth, let h = nativeHeight, w > 0, h > 0 { parts.append("\(w)x\(h)") }
+        if let g = gamutLabel { parts.append(g) }
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct DeviceStorage {
     let totalBytes: Double
     let freeBytes: Double

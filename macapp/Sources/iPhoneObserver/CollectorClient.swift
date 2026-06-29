@@ -22,6 +22,7 @@ final class CollectorClient: ObservableObject {
     @Published var memory: Memory?
     @Published var systemStats: SystemStats?
     @Published var graphics: GraphicsStats?
+    @Published var displayInfo: DisplayInfo?
     @Published var storage: DeviceStorage?
     @Published var apps: [AppInfo] = []
     @Published var crashes: [CrashInfo] = []
@@ -358,6 +359,16 @@ final class CollectorClient: ObservableObject {
         case ("networking", "connections"): applyNet(d)
         case ("syslog", "line"): applyLog(d)
         case ("collector", "device"): applyDevice(d)
+        case ("collector", "display"):
+            displayInfo = DisplayInfo(
+                refreshRate: numD(d["refresh_rate"]),
+                nativeWidth: numI(d["native_width"]),
+                nativeHeight: numI(d["native_height"]),
+                colorGamut: d["color_gamut"] as? String,
+                hdrMode: d["hdr_mode"] as? String,
+                promotion: d["promotion"] as? Bool ?? false,
+                backlight: d["backlight"] as? String
+            )
         case ("collector", "status"):
             if let s = d["state"] as? String { state = s }
         case ("collector", "error"):
