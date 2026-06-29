@@ -75,6 +75,11 @@ struct HeaderBar: View {
             }
             PrivacyDots()
             AlertsBell()
+            Button { client.reconnect() } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help("Reconnecter l'iPhone (si le flux est fige)")
             StatePill(state: client.state)
         }
     }

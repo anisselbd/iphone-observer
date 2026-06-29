@@ -57,6 +57,11 @@ def make_app(
             return {"available": False, "reason": "storage desactive"}
         return await collector.storage.timeline(minutes=minutes)
 
+    @app.post("/api/reconnect")
+    async def reconnect() -> dict:
+        collector.force_reconnect()
+        return {"ok": True}
+
     @app.get("/api/export.csv")
     async def export_csv(minutes: float = 60.0) -> Response:
         if collector.storage is None:

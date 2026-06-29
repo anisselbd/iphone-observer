@@ -139,6 +139,19 @@ final class CollectorClient: ObservableObject {
         if let sidecar, sidecar.isRunning { sidecar.terminate() }
     }
 
+    // Force le collector a reconstruire le tunnel (bouton "Reconnecter"). Utile
+    // si l'iPhone s'est mis en veille et que le flux s'est fige.
+    func reconnect() {
+        state = "reconnexion"
+        Task {
+            guard let url = URL(string: "http://\(host):\(port)/api/reconnect") else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.timeoutInterval = 5
+            _ = try? await session.data(for: req)
+        }
+    }
+
     // Export de session (#15): CSV tidy + resume Markdown, sauves dans un dossier.
     @Published var exportStatus: String?
 

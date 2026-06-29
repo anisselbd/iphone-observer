@@ -12,11 +12,12 @@ chaque erreur est un event sur le bus.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Awaitable, Callable, Optional
 
 from .analyzers import deviceinfo, indexing
 from .device import discover_device
-from .events import SOURCE_COLLECTOR, EventBus
+from .events import SOURCE_COLLECTOR, SOURCE_SYSMONTAP, EventBus
 from .sources import diagnostics, display, graphics, networking, syslog, sysmontap
 from .storage import Storage
 from .tunnel import TunnelError, UserspaceTunnel
@@ -43,9 +44,13 @@ class Collector:
         self._task: Optional[asyncio.Task] = None
         self._analyzer_tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
+        self._reconnect = asyncio.Event()  # reconnexion manuelle a la demande
         self._cpu_cores: Optional[int] = None
         self._device_data: dict = {}
         self._rsd = None  # RSD du tunnel courant, pour les actions a la demande
+        # Au-dela de ce delai sans tick sysmontap, on considere le flux fige
+        # (tunnel mort silencieusement, ex: iPhone en veille) et on reconnecte.
+        self.stall_timeout_s = 12.0
 
     # --- cycle de vie ---------------------------------------------------------
 
@@ -178,23 +183,36 @@ class Collector:
             ("graphics", graphics.run, {}),
             ("display", display.run, {}),
         ]
+        self._reconnect.clear()  # ne pas consommer une demande perimee
         tasks = [
             asyncio.create_task(run(rsd, self.bus, **opts), name=f"source:{name}")
             for name, run, opts in specs
         ]
         stop_task = asyncio.create_task(self._stop.wait(), name="stop-watch")
+        reconnect_task = asyncio.create_task(self._reconnect.wait(), name="reconnect-watch")
+        watchdog_task = asyncio.create_task(self._watchdog(), name="watchdog")
+        watchers = [stop_task, reconnect_task, watchdog_task]
         try:
             done, _pending = await asyncio.wait(
-                [*tasks, stop_task], return_when=asyncio.FIRST_COMPLETED
+                [*tasks, *watchers], return_when=asyncio.FIRST_COMPLETED
             )
         finally:
-            for t in tasks:
+            for t in (*tasks, *watchers):
                 t.cancel()
-            stop_task.cancel()
-            await asyncio.gather(*tasks, stop_task, return_exceptions=True)
+            await asyncio.gather(*tasks, *watchers, return_exceptions=True)
 
         if self._stop.is_set():
             return
+        if reconnect_task in done and not reconnect_task.cancelled():
+            # Reconnexion demandee par l'utilisateur: on rend la main proprement,
+            # la boucle _run rouvrira le tunnel.
+            self._set_state("reconnecting", "reconnexion demandee")
+            return
+        if watchdog_task in done and not watchdog_task.cancelled():
+            raise TunnelError(
+                f"flux fige (aucun tick depuis > {self.stall_timeout_s:.0f}s): "
+                "iPhone en veille ou tunnel perdu. Reconnexion."
+            )
         # Une source s'est arretee: on propage pour reconnecter.
         for t in tasks:
             if t in done and not t.cancelled():
@@ -203,7 +221,28 @@ class Collector:
                     raise exc
         raise TunnelError("une source s'est arretee (flux interrompu)")
 
+    async def _watchdog(self) -> None:
+        """Surveille la fraicheur du flux. Se termine (declenche une reconnexion)
+        si aucun tick sysmontap n'arrive depuis stall_timeout_s. Une periode de
+        grace initiale laisse le temps au 1er tick (et evite de reagir a un
+        dernier tick perime herite de la connexion precedente)."""
+        grace_s = self.stall_timeout_s + 6.0
+        started = time.monotonic()
+        while True:
+            await asyncio.sleep(3.0)
+            latest = self.bus.latest(SOURCE_SYSMONTAP, "process_tick")
+            fresh = latest is not None and (time.time() - latest["ts"]) <= self.stall_timeout_s
+            if fresh:
+                continue
+            if time.monotonic() - started < grace_s:
+                continue  # on laisse une chance au flux de demarrer
+            return  # flux fige -> on rend la main
+
     # --- actions a la demande -------------------------------------------------
+
+    def force_reconnect(self) -> None:
+        """Demande une reconnexion immediate du tunnel (bouton UI)."""
+        self._reconnect.set()
 
     async def take_screenshot(self) -> bytes:
         """Capture l'ecran via le tunnel courant (PNG). Leve si pas connecte."""
