@@ -136,6 +136,13 @@ struct DisplayInfo {
     let promotion: Bool
     let backlight: String?
 
+    // Le device renvoie "activeOn" (allume) ou "off" (eteint). On considere
+    // allume tout etat different de "off".
+    var screenOn: Bool? {
+        guard let b = backlight else { return nil }
+        return b.lowercased() != "off"
+    }
+
     private var gamutLabel: String? {
         switch colorGamut {
         case "displayP3": return "P3"

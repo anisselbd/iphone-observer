@@ -976,11 +976,11 @@ struct DeviceTab: View {
                         Text("Hz" + (d.promotion ? " ProMotion" : "")).foregroundStyle(.secondary)
                     }
                     Text(d.summary).font(.caption2).foregroundStyle(.tertiary)
-                    if let bl = d.backlight {
-                        Label(bl == "on" ? "ecran allume" : "ecran eteint",
-                              systemImage: bl == "on" ? "sun.max.fill" : "moon.fill")
+                    if let on = d.screenOn {
+                        Label(on ? "ecran allume" : "ecran eteint",
+                              systemImage: on ? "sun.max.fill" : "moon.fill")
                             .font(.caption2)
-                            .foregroundStyle(bl == "on" ? Color.warnYellow : .secondary)
+                            .foregroundStyle(on ? Color.warnYellow : .secondary)
                     }
                     Text("La jauge FPS (onglet principal) plafonne a ~60: c'est une limite de la sonde, pas de l'ecran.")
                         .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
