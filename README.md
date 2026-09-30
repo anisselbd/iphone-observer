@@ -119,7 +119,3 @@ Storage (phase 6): une table SQLite events(ts, source, type, udid, seq, data).
 - [x] Phase 5: reseau (channel networking live; pcap gate par iOS 26, voir limites)
 - [x] Phase 6: storage SQLite + timeline unifiee (CPU + temp batterie + reseau + indexation + erreurs)
 - [x] Phase 7: shell natif SwiftUI (fenetre dashboard + menu bar, collector en sidecar)
-
-## Convention
-
-Pas de tirets cadratins ni demi-cadratins dans le code, les commentaires ou l'UI.
